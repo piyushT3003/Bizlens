@@ -103,9 +103,15 @@ function createFallbackMetrics(
     periodDelta = 14.5;
   }
 
-  const isNonCommercial = safePreset.revenue_formatted === "--" || safePreset.revenue_raw === 0 || safePreset.name.toLowerCase().includes("student");
+  const isNonCommercial =
+    safePreset.is_commercial === false ||
+    safePreset.revenue_formatted === "--" ||
+    safePreset.revenue_raw === 0 ||
+    safePreset.id === "ds-student-performance" ||
+    safePreset.name.toLowerCase().includes("student");
+
   if (isNonCommercial) {
-    const rawOrders = safePreset.total_orders || 10000;
+    const rawOrders = safePreset.total_orders || safePreset.row_count || 10000;
     return {
       total_revenue: {
         metric_id: "total_revenue",
@@ -116,29 +122,8 @@ function createFallbackMetrics(
         direction: "neutral",
         status: "neutral",
         is_available: false,
+        unavailable_reason: "Dataset does not contain a sales or revenue column",
         formula_sql: "SUM({revenue})",
-      },
-      gross_profit: {
-        metric_id: "gross_profit",
-        label: "Gross Profit",
-        value: null,
-        formatted_value: "--",
-        unit: "currency",
-        direction: "neutral",
-        status: "neutral",
-        is_available: false,
-        formula_sql: "SUM({revenue}) - SUM({cost})",
-      },
-      gross_margin_pct: {
-        metric_id: "gross_margin_pct",
-        label: "Gross Margin %",
-        value: null,
-        formatted_value: "--",
-        unit: "percentage",
-        direction: "neutral",
-        status: "neutral",
-        is_available: false,
-        formula_sql: "Profit / Revenue",
       },
       total_orders: {
         metric_id: "total_orders",
@@ -150,6 +135,42 @@ function createFallbackMetrics(
         status: "positive",
         is_available: true,
         formula_sql: "COUNT(*)",
+      },
+      gross_profit: {
+        metric_id: "gross_profit",
+        label: "Gross Profit",
+        value: null,
+        formatted_value: "--",
+        unit: "currency",
+        direction: "neutral",
+        status: "neutral",
+        is_available: false,
+        unavailable_reason: "Dataset does not contain cost or profit columns",
+        formula_sql: "SUM({revenue}) - SUM({cost})",
+      },
+      gross_margin_pct: {
+        metric_id: "gross_margin_pct",
+        label: "Gross Margin %",
+        value: null,
+        formatted_value: "--",
+        unit: "percentage",
+        direction: "neutral",
+        status: "neutral",
+        is_available: false,
+        unavailable_reason: "Dataset does not contain profit or margin columns",
+        formula_sql: "Profit / Revenue",
+      },
+      total_units: {
+        metric_id: "total_units",
+        label: "Total Units",
+        value: null,
+        formatted_value: "--",
+        unit: "count",
+        direction: "neutral",
+        status: "neutral",
+        is_available: false,
+        unavailable_reason: "Dataset does not track unit volume",
+        formula_sql: "SUM({quantity})",
       },
     };
   }
@@ -187,6 +208,20 @@ function createFallbackMetrics(
           ? `SUM(revenue) WHERE category = '${selectedCategory}'`
           : "SUM({revenue})",
     },
+    total_orders: {
+      metric_id: "total_orders",
+      label: "Total Orders",
+      value: rawOrders,
+      formatted_value: rawOrders.toLocaleString(),
+      unit: "count",
+      direction: periodDelta >= 0 ? "up" : "down",
+      previous_value: Math.round(rawOrders * 0.94),
+      delta_abs: Math.round(rawOrders * 0.06),
+      delta_pct: periodDelta >= 0 ? 6.4 : -5.8,
+      status: periodDelta >= 0 ? "positive" : "critical",
+      is_available: true,
+      formula_sql: "COUNT({order_id})",
+    },
     gross_profit: {
       metric_id: "gross_profit",
       label: "Gross Profit",
@@ -214,20 +249,6 @@ function createFallbackMetrics(
       status: "positive",
       is_available: true,
       formula_sql: "({gross_profit} / {total_revenue}) * 100",
-    },
-    total_orders: {
-      metric_id: "total_orders",
-      label: "Total Transactions",
-      value: rawOrders,
-      formatted_value: rawOrders.toLocaleString(),
-      unit: "count",
-      direction: periodDelta >= 0 ? "up" : "down",
-      previous_value: Math.round(rawOrders * 0.94),
-      delta_abs: Math.round(rawOrders * 0.06),
-      delta_pct: periodDelta >= 0 ? 6.4 : -5.8,
-      status: periodDelta >= 0 ? "positive" : "critical",
-      is_available: true,
-      formula_sql: "COUNT({order_id})",
     },
     avg_order_value: {
       metric_id: "avg_order_value",
@@ -262,12 +283,25 @@ function createFallbackMetrics(
 
 function createFallbackBreakdown(preset?: PresetDatasetMetadata | null): BreakdownItem[] {
   const safePreset = preset || (Array.isArray(PRESET_DATASETS) && PRESET_DATASETS[0]) || LOCAL_DEFAULT_PRESET;
-  const categories = safePreset.categories || LOCAL_DEFAULT_PRESET.categories;
+  const categories = safePreset.categories && safePreset.categories.length > 0
+    ? safePreset.categories
+    : LOCAL_DEFAULT_PRESET.categories;
+
+  const isNonCommercial =
+    safePreset.is_commercial === false ||
+    safePreset.revenue_formatted === "--" ||
+    safePreset.revenue_raw === 0 ||
+    safePreset.id === "ds-student-performance" ||
+    safePreset.name.toLowerCase().includes("student");
+
+  const rawRev = isNonCommercial ? 0 : (safePreset.revenue_raw || 23425426.50);
+  const rawOrders = safePreset.total_orders || safePreset.row_count || 10000;
+
   return categories.map((c, idx) => ({
     dimension_value: c.name,
     metrics: {
-      total_revenue: Math.round(((safePreset.revenue_raw || 11293000) * c.share_pct) / 100),
-      total_orders: Math.round(((safePreset.total_orders || 12480) * c.share_pct) / 100),
+      total_revenue: isNonCommercial ? 0 : Math.round((rawRev * c.share_pct) / 100),
+      total_orders: Math.max(1, Math.round((rawOrders * c.share_pct) / 100)),
     },
     share_pct: c.share_pct,
     rank: idx + 1,
@@ -432,7 +466,7 @@ export function useAnalytics() {
     } finally {
       setIsLoading(false);
     }
-  }, [dsId, selectedCategory, selectedPeriod, breakdownDimension, periodOptions, prefCurrency, prefGrouping]);
+  }, [dsId, safePreset, activeDataset, selectedCategory, selectedPeriod, breakdownDimension, periodOptions, prefCurrency, prefGrouping]);
 
   useEffect(() => {
     loadData();

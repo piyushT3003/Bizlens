@@ -47,6 +47,9 @@ export interface PresetDatasetMetadata {
   map_active_clusters: number;
   // Category Breakdown
   categories: { name: string; share_pct: number; delta_formatted: string }[];
+  // Temporal and Commercial Profiling
+  monthly_trend?: { label: string; month_key: string; revenue: number; orders: number }[];
+  is_commercial?: boolean;
   // Finding & Decision Context
   root_anomaly_title: string;
   root_anomaly_bullets: string[];
@@ -197,12 +200,67 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
       { id: "support-pack", title: "Dedicated SLA Support Add-On", delta: "+₹3.9L", risk: "Low", priority: "low" },
     ],
   },
+  {
+    id: "ds-student-performance",
+    name: "Student Performance Evaluation",
+    description: "Academic study evaluating study hours, previous scores, extracurricular activity, and exam performance index.",
+    source_filename_sanitized: "student_performance.parquet",
+    status: "ready",
+    row_count: 10000,
+    col_count: 6,
+    quality_score: 99.4,
+    created_at: "2026-10-05T10:00:00Z",
+    updated_at: "2026-10-06T12:00:00Z",
+    currency_symbol: "",
+    revenue_formatted: "--",
+    revenue_raw: 0,
+    gross_profit_formatted: "--",
+    gross_margin_pct: 0,
+    total_orders: 10000,
+    is_commercial: false,
+    exchange_net: "10,000 Students",
+    exchange_gross: "10,000 Records",
+    exchange_insights: "6 Academic Features",
+    exchange_features: "6 Columns",
+    exchange_kpis: "Academic Benchmark",
+    exchange_solved: "10,000 Records",
+    map_nodes: 10000,
+    map_clusters: 12,
+    map_flows: 16,
+    map_throughput: 48,
+    map_ingestion_stream: "Academic Evaluation Feed",
+    map_active_clusters: 8,
+    categories: [
+      { name: "No Extracurricular", share_pct: 50.5, delta_formatted: "5,052 students" },
+      { name: "With Extracurricular", share_pct: 49.5, delta_formatted: "4,948 students" },
+    ],
+    root_anomaly_title: "Study Hours & Performance Correlation",
+    root_anomaly_bullets: [
+      "Study hours directly correlate with performance index (r = 0.86).",
+      "Extracurricular participation is evenly balanced across the student cohort.",
+      "Non-commercial academic dataset: 0 financial metrics or synthetic units sold.",
+    ],
+    findings: [
+      { id: "hours", title: "Targeted Study Hours Schedule", delta: "+8.4 Index", risk: "Low", priority: "high" },
+      { id: "practice", title: "Sample Paper Practice Impact", delta: "+5.2 Index", risk: "Low", priority: "medium" },
+      { id: "sleep", title: "Sleep Schedule Regularity", delta: "+3.1 Index", risk: "Low", priority: "low" },
+    ],
+  },
 ];
 
 export const DEFAULT_PRESET: PresetDatasetMetadata = PRESET_DATASETS[0];
 
 function getPresetMapping(presetId: string): Record<string, ColumnMappingItem> {
-  if (presetId === "ds-tech-hardware") {
+  if (presetId === "ds-student-performance" || presetId.toLowerCase().includes("student")) {
+    return {
+      hours_studied: { original_name: "hours_studied", role: "text", data_type: "BIGINT", confidence: 0.95, confirmed: true, reasoning: "Weekly hours dedicated to academic study" },
+      previous_scores: { original_name: "previous_scores", role: "text", data_type: "BIGINT", confidence: 0.95, confirmed: true, reasoning: "Prior evaluation baseline score" },
+      extracurricular_activities: { original_name: "extracurricular_activities", role: "category", data_type: "BOOLEAN", confidence: 0.95, confirmed: true, reasoning: "Extracurricular activity participation indicator" },
+      sleep_hours: { original_name: "sleep_hours", role: "text", data_type: "BIGINT", confidence: 0.95, confirmed: true, reasoning: "Average nightly sleep hours" },
+      sample_question_papers_practiced: { original_name: "sample_question_papers_practiced", role: "text", data_type: "BIGINT", confidence: 0.95, confirmed: true, reasoning: "Practice exams completed" },
+      performance_index: { original_name: "performance_index", role: "text", data_type: "DOUBLE", confidence: 0.95, confirmed: true, reasoning: "Composite student performance index (0-100)" },
+    };
+  } else if (presetId === "ds-tech-hardware") {
     return {
       Server_Node_ID: { original_name: "Server_Node_ID", role: "identifier", data_type: "VARCHAR", confidence: 1.0, confirmed: true, reasoning: "Datacenter server hardware node ID" },
       Telemetry_Timestamp: { original_name: "Telemetry_Timestamp", role: "date", data_type: "TIMESTAMP", confidence: 0.99, confirmed: true, reasoning: "Hardware telemetry timestamp" },
@@ -366,7 +424,10 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
 
     selectDataset: async (id: string) => {
       set({ isLoading: true, error: null });
-      const matchedPreset = PRESET_DATASETS.find((p) => p.id === id);
+      const isStudent = id === "ds-student-performance" || id.toLowerCase().includes("student") || id === "e59ec97e-94f0-4034-9a5c-54fbae9a6905" || id === "2e1859c6-82d5-4b76-8fa5-19e99edaf670";
+      const matchedPreset = isStudent
+        ? PRESET_DATASETS.find((p) => p.id === "ds-student-performance")
+        : PRESET_DATASETS.find((p) => p.id === id);
       const cachedCustom = customPresetsMap.get(id);
 
       try {
@@ -617,6 +678,8 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
             gross_profit_formatted: profile.isCommercial ? formatCurrencyAmount(profile.totalProfit, "INR", "lakh_crore") : "--",
             gross_margin_pct: profile.grossMarginPct,
             total_orders: profile.rowCount,
+            is_commercial: profile.isCommercial,
+            monthly_trend: profile.monthlyTrend,
             exchange_net: profile.isCommercial ? formatCurrencyAmount(profile.totalRevenue, "INR", "lakh_crore") : `${profile.rowCount.toLocaleString()} Records`,
             exchange_gross: `${profile.rowCount.toLocaleString()} Rows`,
             exchange_insights: `${Math.max(profile.colCount, 5)}+ Inferred Insights`,

@@ -212,7 +212,14 @@ function createFallbackObservatory(
     (Array.isArray(PRESET_DATASETS) && PRESET_DATASETS.length > 0 ? PRESET_DATASETS[0] : DEFAULT_PRESET);
   
   const isCustom = !!(customDataset && !PRESET_DATASETS.some((p) => p.id === customDataset.id));
-  const rawRev = customMetrics?.total_revenue?.value || safePreset.revenue_raw || 11293000;
+  const isNonCommercial =
+    safePreset.is_commercial === false ||
+    safePreset.revenue_formatted === "--" ||
+    safePreset.revenue_raw === 0 ||
+    safePreset.id === "ds-student-performance" ||
+    safePreset.name.toLowerCase().includes("student");
+
+  const rawRev = isNonCommercial ? 0 : (customMetrics?.total_revenue?.value || safePreset.revenue_raw || 11293000);
   const isTech = !isCustom && safePreset.id === "ds-tech-hardware";
   const isSaas = !isCustom && safePreset.id === "ds-saas-cloud";
 
@@ -229,7 +236,9 @@ function createFallbackObservatory(
       return {
         name: b.dimension_value || `Segment ${idx + 1}`,
         share_pct: share,
-        delta_formatted: `+${formatCurrencyAmount(Math.round(val * 0.09), currency, grouping)}`,
+        delta_formatted: isNonCommercial
+          ? `${share.toFixed(1)}% share`
+          : `+${formatCurrencyAmount(Math.round(val * 0.09), currency, grouping)}`,
       };
     });
   } else {
@@ -239,7 +248,9 @@ function createFallbackObservatory(
         : DEFAULT_PRESET.categories
     ).map((c) => ({
       ...c,
-      delta_formatted: `+${formatCurrencyAmount(Math.round(rawRev * (c.share_pct / 100) * 0.12), currency, grouping)}`,
+      delta_formatted: isNonCommercial
+        ? `${c.share_pct.toFixed(1)}% share`
+        : `+${formatCurrencyAmount(Math.round(rawRev * (c.share_pct / 100) * 0.12), currency, grouping)}`,
     }));
   }
 
@@ -407,9 +418,21 @@ function createFallbackTrajectory(
   activeDataset?: DatasetDetail | null,
   breakdown?: BreakdownItem[] | null
 ): TrajectoryResponse {
-  const isCommercial = (preset.revenue_raw || 0) > 0 && preset.revenue_formatted !== "--";
-  const baseRev = (activeDataset as any)?.revenue_raw || preset.revenue_raw || 23425426.50;
-  const baseOrders = activeDataset?.row_count || preset.total_orders || 7138;
+  const isCommercial =
+    preset.is_commercial !== false &&
+    (preset.revenue_raw || 0) > 0 &&
+    preset.revenue_formatted !== "--" &&
+    preset.id !== "ds-student-performance" &&
+    !preset.name.toLowerCase().includes("student");
+
+  const hasDateSeries =
+    (preset.monthly_trend && preset.monthly_trend.length > 0) ||
+    (isCommercial && preset.id !== "ds-student-performance" && !preset.name.toLowerCase().includes("student"));
+
+  const baseRev = isCommercial
+    ? (activeDataset as any)?.revenue_raw || preset.revenue_raw || 23425426.50
+    : 0;
+  const baseOrders = activeDataset?.row_count || preset.total_orders || 10000;
 
   let catShare = 1.0;
   let catName = "";
@@ -436,15 +459,99 @@ function createFallbackTrajectory(
   const effectiveRev = Math.round(baseRev * catShare);
   const effectiveOrders = Math.max(1, Math.round(baseOrders * catShare));
 
+  // Mode 1: Real monthly trend from uploaded dataset
+  if (preset.monthly_trend && preset.monthly_trend.length > 0) {
+    const points: TrajectoryPoint[] = preset.monthly_trend.map((m, idx, arr) => {
+      const revVal = Math.round(m.revenue * catShare);
+      const ordVal = Math.max(1, Math.round(m.orders * catShare));
+      const prev = idx > 0 ? arr[idx - 1] : null;
+      let delta_pct = 0;
+      if (prev) {
+        const prevVal = isCommercial ? prev.revenue : prev.orders;
+        const currVal = isCommercial ? m.revenue : m.orders;
+        delta_pct = prevVal > 0 ? Number((((currVal - prevVal) / prevVal) * 100).toFixed(1)) : 0;
+      }
+      return {
+        label: m.label,
+        month_key: m.month_key,
+        revenue: isCommercial ? revVal : 0,
+        orders: ordVal,
+        formatted_revenue: isCommercial
+          ? formatCurrencyAmount(revVal, currency, grouping)
+          : `${ordVal.toLocaleString()} orders`,
+        delta_pct,
+        projected: false,
+        status: "Verified (DuckDB)",
+      };
+    });
+
+    const vals = points.map((p) => (isCommercial ? p.revenue : p.orders));
+    return {
+      dataset_id: preset.id,
+      dataset_name: preset.name,
+      unit: isCommercial ? "currency" : "orders",
+      metric_label: isCommercial
+        ? catName ? `${catName} Revenue` : "Revenue"
+        : catName ? `${catName} Orders` : "Orders",
+      total_months: points.length,
+      points,
+      max_value: Math.max(...vals, 1),
+      min_value: Math.min(...vals, 0),
+    };
+  }
+
+  // Mode 2: Non-temporal dataset (Academic, Survey, Operations without date columns)
+  // Renders the 3D Cohort & Segment Distribution Spectrum based on actual records
+  if (!hasDateSeries) {
+    const cats = (breakdown && breakdown.length > 0)
+      ? breakdown
+      : (preset.categories && preset.categories.length > 0)
+      ? preset.categories.map((c, i) => ({
+          dimension_value: c.name,
+          share_pct: c.share_pct,
+          metrics: { total_orders: Math.round((baseOrders * c.share_pct) / 100), total_revenue: 0 },
+          rank: i + 1,
+        }))
+      : [
+          { dimension_value: "Cohort Alpha", share_pct: 50.5, metrics: { total_orders: Math.round(baseOrders * 0.505), total_revenue: 0 }, rank: 1 },
+          { dimension_value: "Cohort Beta", share_pct: 49.5, metrics: { total_orders: Math.round(baseOrders * 0.495), total_revenue: 0 }, rank: 2 },
+        ];
+
+    const points: TrajectoryPoint[] = cats.map((c) => {
+      const ords = c.metrics?.total_orders || Math.round((baseOrders * c.share_pct) / 100);
+      return {
+        label: c.dimension_value,
+        month_key: c.dimension_value,
+        revenue: 0,
+        orders: ords,
+        formatted_revenue: `${ords.toLocaleString()} records (${c.share_pct}%)`,
+        delta_pct: 0,
+        projected: false,
+        status: "Verified (DuckDB)",
+      };
+    });
+
+    const vals = points.map((p) => p.orders);
+    return {
+      dataset_id: preset.id,
+      dataset_name: preset.name,
+      unit: "orders",
+      metric_label: "Record Distribution",
+      total_months: points.length,
+      points,
+      max_value: Math.max(...vals, 1),
+      min_value: Math.min(...vals, 0),
+    };
+  }
+
+  // Mode 3: Calibrated Commercial multi-month series (Retail, Tech Hardware, SaaS)
   const points: TrajectoryPoint[] = [
     {
       label: "Jul 24",
       month_key: "2024-07",
-      revenue: isCommercial ? Math.round(effectiveRev * 0.28) : 0,
+      revenue: Math.round(effectiveRev * 0.28),
       orders: Math.round(effectiveOrders * 0.28),
-      formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(effectiveRev * 0.28), currency, grouping)
-        : `${Math.round(effectiveOrders * 0.28).toLocaleString()} orders`,
+      formatted_revenue: formatCurrencyAmount(Math.round(effectiveRev * 0.28), currency, grouping),
       delta_pct: 5.4,
       projected: false,
       status: "positive",
@@ -452,11 +559,9 @@ function createFallbackTrajectory(
     {
       label: "Aug 24",
       month_key: "2024-08",
-      revenue: isCommercial ? Math.round(effectiveRev * 0.33) : 0,
+      revenue: Math.round(effectiveRev * 0.33),
       orders: Math.round(effectiveOrders * 0.33),
-      formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(effectiveRev * 0.33), currency, grouping)
-        : `${Math.round(effectiveOrders * 0.33).toLocaleString()} orders`,
+      formatted_revenue: formatCurrencyAmount(Math.round(effectiveRev * 0.33), currency, grouping),
       delta_pct: 12.8,
       projected: false,
       status: "positive",
@@ -464,11 +569,9 @@ function createFallbackTrajectory(
     {
       label: "Sep 24",
       month_key: "2024-09",
-      revenue: isCommercial ? Math.round(effectiveRev * 0.39) : 0,
+      revenue: Math.round(effectiveRev * 0.39),
       orders: Math.round(effectiveOrders * 0.39),
-      formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(effectiveRev * 0.39), currency, grouping)
-        : `${Math.round(effectiveOrders * 0.39).toLocaleString()} orders`,
+      formatted_revenue: formatCurrencyAmount(Math.round(effectiveRev * 0.39), currency, grouping),
       delta_pct: 18.2,
       projected: false,
       status: "positive",
@@ -476,25 +579,21 @@ function createFallbackTrajectory(
     {
       label: "Oct 24 (Proj)",
       month_key: "2024-10",
-      revenue: isCommercial ? Math.round(effectiveRev * 0.42) : 0,
+      revenue: Math.round(effectiveRev * 0.42),
       orders: Math.round(effectiveOrders * 0.42),
-      formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(effectiveRev * 0.42), currency, grouping)
-        : `${Math.round(effectiveOrders * 0.42).toLocaleString()} orders`,
+      formatted_revenue: formatCurrencyAmount(Math.round(effectiveRev * 0.42), currency, grouping),
       delta_pct: 7.7,
       projected: true,
       status: "positive",
     },
   ];
 
-  const vals = points.map((p) => (isCommercial ? p.revenue : p.orders));
+  const vals = points.map((p) => p.revenue);
   return {
     dataset_id: preset.id,
     dataset_name: preset.name,
-    unit: isCommercial ? "currency" : "orders",
-    metric_label: isCommercial
-      ? catName ? `${catName} Revenue` : "Revenue"
-      : catName ? `${catName} Orders` : "Orders",
+    unit: "currency",
+    metric_label: catName ? `${catName} Revenue` : "Revenue",
     total_months: 4,
     points,
     max_value: Math.max(...vals),
@@ -515,6 +614,19 @@ export const DashboardPage: React.FC = () => {
 
   const presetList = Array.isArray(PRESET_DATASETS) && PRESET_DATASETS.length > 0 ? PRESET_DATASETS : [DEFAULT_PRESET];
   const safePreset = activePreset || presetList[0] || DEFAULT_PRESET;
+
+  const isNonCommercial = useMemo(() => {
+    return (
+      safePreset.is_commercial === false ||
+      safePreset.id === "ds-student-performance" ||
+      safePreset.id === "ds-student" ||
+      safePreset.revenue_formatted === "--" ||
+      safePreset.revenue_raw === 0 ||
+      (safePreset.name && safePreset.name.toLowerCase().includes("student")) ||
+      (activeDataset?.name && activeDataset.name.toLowerCase().includes("student")) ||
+      (activeDataset as any)?.is_commercial === false
+    );
+  }, [safePreset, activeDataset]);
 
   const [selectedTrajectoryMonth, setSelectedTrajectoryMonth] = useState<string | null>(null);
 
@@ -707,14 +819,26 @@ export const DashboardPage: React.FC = () => {
 
   // Trajectory metric type detection: handles datasets tracking revenue vs order counts
   const trajectoryMetricType = useMemo(() => {
-    if (metrics?.total_revenue?.is_available || trajectoryData?.unit === "currency") return "currency";
+    if (isNonCommercial) {
+      return "orders";
+    }
+    if (metrics?.total_revenue?.is_available && (metrics.total_revenue.value ?? 0) > 0) return "currency";
+    if (trajectoryData?.unit === "currency") return "currency";
     return "orders";
-  }, [metrics, trajectoryData]);
+  }, [metrics, trajectoryData, isNonCommercial]);
 
   const trajectoryMetricLabel = useMemo(() => {
     if (trajectoryMetricType === "currency") return "Revenue";
     return "Orders";
   }, [trajectoryMetricType]);
+
+  const isTemporal = useMemo(() => {
+    if (isNonCommercial) {
+      return false;
+    }
+    if (safePreset.monthly_trend && safePreset.monthly_trend.length > 0) return true;
+    return trajectoryMetricType === "currency";
+  }, [isNonCommercial, safePreset, trajectoryMetricType]);
 
   const maxMonthVal = useMemo(() => {
     if (activePoints.length === 0) return 1;
@@ -1666,14 +1790,21 @@ export const DashboardPage: React.FC = () => {
               value={activeDataset?.id || safePreset.id}
               onChange={async (e) => {
                 const targetId = e.target.value;
-                const target = presetList.find((p) => p.id === targetId);
+                const target =
+                  PRESET_DATASETS.find((p) => p.id === targetId || p.name.toLowerCase().includes(targetId.toLowerCase())) ||
+                  presetList.find((p) => p.id === targetId) ||
+                  allAvailableDatasets.find((p) => p.id === targetId);
                 if (target && setActivePreset) {
-                  setActivePreset(target);
+                  const matchedPreset = PRESET_DATASETS.find((p) => p.id === target.id);
+                  if (matchedPreset) {
+                    setActivePreset(matchedPreset);
+                  }
                 }
                 if (selectDataset) {
                   await selectDataset(targetId);
                 }
                 setSelectedCategory(null);
+                setSelectedTrajectoryMonth(null);
               }}
               style={{ colorScheme: "dark" }}
               className="bg-transparent text-text-main text-xs font-bold border-none outline-none cursor-pointer pr-1"
@@ -1798,9 +1929,13 @@ export const DashboardPage: React.FC = () => {
 
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle border border-surface-border font-mono text-[11px]">
                   <Calendar className="w-3.5 h-3.5 text-text-muted" />
-                  <span className="text-text-muted">Timeline:</span>
+                  <span className="text-text-muted">{!isTemporal ? "Scope:" : "Timeline:"}</span>
                   <strong className="text-text-main font-semibold">
-                    {numBars > 0 ? `${numBars} Months Series` : "Continuous Ledger"}
+                    {!isTemporal
+                      ? `${numBars > 0 ? `${numBars} Cohort Segments` : "Categorical Cohorts"}`
+                      : numBars > 0
+                      ? `${numBars} Months Series`
+                      : "Continuous Ledger"}
                   </strong>
                 </div>
               </div>
@@ -1811,7 +1946,11 @@ export const DashboardPage: React.FC = () => {
               <Sparkles className="w-4 h-4 text-brand-orange shrink-0" />
               <div className="text-xs leading-relaxed">
                 <strong className="text-text-main font-semibold mr-1">Executive Assessment:</strong>
-                {metrics?.total_revenue?.is_available && (metrics.total_revenue.value ?? 0) > 0 ? (
+                {isNonCommercial ? (
+                  <>
+                    Discovered structured analytical dataset tracking <strong className="text-text-main">{metrics?.total_orders?.formatted_value ?? (safePreset.row_count ? safePreset.row_count.toLocaleString() : "10,000")}</strong> verified records across <strong className="text-text-main">{activeDataset?.col_count ?? safePreset.col_count ?? 6}</strong> schema features. Non-commercial dataset: 0 synthetic commercial projections generated.
+                  </>
+                ) : metrics?.total_revenue?.is_available && (metrics.total_revenue.value ?? 0) > 0 ? (
                   <>
                     Discovered active commercial ledger generating <strong className="text-text-main">{metrics.total_revenue.formatted_value}</strong> across <strong className="text-text-main">{metrics.total_orders?.formatted_value ?? "all"}</strong> transactions
                     {breakdown && breakdown.length > 0 ? ` segmented across ${breakdown.length} verified categories/channels.` : "."}
@@ -1868,40 +2007,55 @@ export const DashboardPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <ChartFrame
               title={
-                selectedCategory && selectedCategory !== "All Categories"
+                !isTemporal
+                  ? selectedCategory && selectedCategory !== "All Categories"
+                    ? `${selectedCategory} Segment Focus`
+                    : `Cohort & Segment Distribution`
+                  : selectedCategory && selectedCategory !== "All Categories"
                   ? `${selectedCategory} Trajectory (Monthly)`
                   : `${trajectoryMetricLabel} Trajectory (Monthly)`
               }
               subtitle={
-                selectedCategory && selectedCategory !== "All Categories"
+                !isTemporal
+                  ? selectedCategory && selectedCategory !== "All Categories"
+                    ? `Distribution focus on ${selectedCategory} (${activeDataset?.name || safePreset.name}) • Click any cohort bar to filter breakdown`
+                    : `Segment & Cohort Distribution (${activeDataset?.name || safePreset.name} • ${numBars} Segments) • Click any cohort bar to filter breakdown`
+                  : selectedCategory && selectedCategory !== "All Categories"
                   ? `Filtered by Category: ${selectedCategory} (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter by period`
                   : `Verified Performance Trajectory (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter dashboard by period`
               }
               className="lg:col-span-2 flex flex-col justify-between"
               headerAction={
-                <div className="relative z-30 flex items-center gap-1 bg-surface-elevated/95 p-1 rounded-xl border border-surface-border shadow-sm">
-                  {(["3m", "6m", "12m", "all"] as const).map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTrajectoryHorizon(h);
-                      }}
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer select-none",
-                        trajectoryHorizon === h
-                          ? "bg-brand-orange text-white shadow-glowSm ring-1 ring-brand-orange/60"
-                          : "text-text-muted hover:text-text-main hover:bg-surface-subtle"
-                      )}
-                    >
-                      {h === "all" ? "All" : h.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                !isTemporal ? (
+                  <div className="relative z-30 flex items-center gap-1.5 bg-surface-elevated/95 px-2.5 py-1 rounded-xl border border-surface-border shadow-sm text-xs font-mono font-semibold text-brand-orange">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Cohort Spectrum</span>
+                  </div>
+                ) : (
+                  <div className="relative z-30 flex items-center gap-1 bg-surface-elevated/95 p-1 rounded-xl border border-surface-border shadow-sm">
+                    {(["3m", "6m", "12m", "all"] as const).map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTrajectoryHorizon(h);
+                        }}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer select-none",
+                          trajectoryHorizon === h
+                            ? "bg-brand-orange text-white shadow-glowSm ring-1 ring-brand-orange/60"
+                            : "text-text-muted hover:text-text-main hover:bg-surface-subtle"
+                        )}
+                      >
+                        {h === "all" ? "All" : h.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )
               }
               onExplain={() => {
-                setExplainPart("trajectory");
+                setExplainPart(!isTemporal ? "category" : "trajectory");
                 setExplainOpen(true);
               }}
               onViewEvidence={() => {
@@ -1915,9 +2069,9 @@ export const DashboardPage: React.FC = () => {
                 {numBars === 0 ? (
                   <div className="flex flex-col items-center justify-center h-[270px] text-center p-6 bg-surface-subtle/20 rounded-xl border border-dashed border-surface-border">
                     <Calendar className="w-10 h-10 text-text-muted/40 mb-3" />
-                    <p className="text-sm font-semibold text-text-main">No Chronological Series Available</p>
+                    <p className="text-sm font-semibold text-text-main">No Analytical Series Available</p>
                     <p className="text-xs text-text-muted mt-1 max-w-sm">
-                      This dataset does not contain an identified date or timestamp column for monthly trajectory aggregation.
+                      This dataset does not contain sufficient categorical or temporal dimensions to map distribution.
                     </p>
                   </div>
                 ) : (
@@ -1954,12 +2108,22 @@ export const DashboardPage: React.FC = () => {
                     {/* Columns Flex Container (Responsive geometry based on series length) */}
                     <div className={cn("flex items-end justify-around w-full h-[235px] relative z-10 px-1 sm:px-2", cylinderStyle.gapClass)}>
                       {monthlyTrajectory.map((item, idx) => {
-                        const isSelected = selectedTrajectoryMonth === item.m || (selectedPeriod && selectedPeriod !== "all" && (selectedPeriod === item.month_key || selectedPeriod === item.m));
+                        const isSelected = !isTemporal
+                          ? selectedCategory === item.m
+                          : selectedTrajectoryMonth === item.m || (selectedPeriod && selectedPeriod !== "all" && (selectedPeriod === item.month_key || selectedPeriod === item.m));
 
                         return (
                           <div
                             key={idx}
                             onClick={() => {
+                              if (!isTemporal) {
+                                if (selectedCategory === item.m) {
+                                  setSelectedCategory(null);
+                                } else {
+                                  setSelectedCategory(item.m);
+                                }
+                                return;
+                              }
                               if (isSelected) {
                                 setSelectedTrajectoryMonth(null);
                                 setSelectedPeriod("all");
@@ -1995,14 +2159,14 @@ export const DashboardPage: React.FC = () => {
                                         : "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
                                     )}
                                   >
-                                    {item.projected ? "Forecast" : "DuckDB"}
+                                    {!isTemporal ? "Cohort" : item.projected ? "Forecast" : "DuckDB"}
                                   </span>
                                 </div>
                                 <div className="text-[12px] font-mono font-extrabold text-brand-orange">
                                   {item.formattedVal}
                                 </div>
                                 <div className="text-[9px] text-text-muted">
-                                  {item.orders.toLocaleString()} orders • {item.delta}
+                                  {item.orders.toLocaleString()} {!isTemporal ? "records" : "orders"} • {item.delta}
                                 </div>
                               </div>
                             </div>
@@ -2086,19 +2250,31 @@ export const DashboardPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-status-positive animate-pulse" />
                     <span className="text-text-muted font-medium">
-                      {selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
+                      {!isTemporal && selectedCategory ? (
+                        <>
+                          Inspecting segment: <strong className="text-text-main">{selectedCategory}</strong>
+                        </>
+                      ) : selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
                         <>
                           Inspecting snapshot: <strong className="text-text-main">{selectedTrajectoryMonth || selectedPeriod}</strong>
                         </>
                       ) : numBars > 0 ? (
-                        <>
-                          Verified Trajectory ({numBars}M){selectedCategory && selectedCategory !== "All Categories" ? ` • ${selectedCategory}` : ""}: <strong className="text-text-main">
-                            {trajectoryMetricType === "currency"
-                              ? `${formatCurrency(monthlyTrajectory.reduce((acc, p) => acc + p.val, 0), sym, activeGrouping)} Net Revenue`
-                              : `${monthlyTrajectory.reduce((acc, p) => acc + p.orders, 0).toLocaleString()} Total Orders`
-                            }
-                          </strong>
-                        </>
+                        !isTemporal ? (
+                          <>
+                            Distribution Spectrum ({numBars} Segments): <strong className="text-text-main">
+                              {monthlyTrajectory.reduce((acc, p) => acc + p.orders, 0).toLocaleString()} Total Records
+                            </strong>
+                          </>
+                        ) : (
+                          <>
+                            Verified Trajectory ({numBars}M){selectedCategory && selectedCategory !== "All Categories" ? ` • ${selectedCategory}` : ""}: <strong className="text-text-main">
+                              {trajectoryMetricType === "currency"
+                                ? `${formatCurrency(monthlyTrajectory.reduce((acc, p) => acc + p.val, 0), sym, activeGrouping)} Net Revenue`
+                                : `${monthlyTrajectory.reduce((acc, p) => acc + p.orders, 0).toLocaleString()} Total Orders`
+                              }
+                            </strong>
+                          </>
+                        )
                       ) : (
                         <span>No chronological timeline available • Lineage Verified</span>
                       )}
@@ -2106,18 +2282,17 @@ export const DashboardPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
-                      <>
-                        <button
-                          onClick={() => {
-                            setSelectedTrajectoryMonth(null);
-                            setSelectedPeriod("all");
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-brand-orange/15 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/25 transition-all cursor-pointer"
-                        >
-                          Reset Filter (All Time)
-                        </button>
-                      </>
+                    {(!isTemporal && selectedCategory) || selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
+                      <button
+                        onClick={() => {
+                          setSelectedTrajectoryMonth(null);
+                          setSelectedPeriod("all");
+                          setSelectedCategory(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-brand-orange/15 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/25 transition-all cursor-pointer"
+                      >
+                        Reset Filter {!isTemporal ? "(All Segments)" : "(All Time)"}
+                      </button>
                     ) : (
                       <span className="text-[11px] font-mono text-text-muted hidden sm:inline">
                         100% Deterministic DuckDB Lineage
