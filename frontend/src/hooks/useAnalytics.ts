@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { useDatasetStore, PRESET_DATASETS, PresetDatasetMetadata } from "@/hooks/useDataset";
 import { useSettingsStore, getCurrencySymbol, formatCurrencyAmount } from "@/hooks/useSettings";
+import { computeMetrics, computeBreakdown } from "@/lib/clientAnalyticsEngine";
 
 const LOCAL_DEFAULT_PRESET: PresetDatasetMetadata = {
   id: "ds-retail-q3",
@@ -453,16 +454,16 @@ export function useAnalytics() {
           metric_ids: ["total_revenue", "total_orders", "total_units"],
           filters: Object.keys(breakdownFilters).length > 0 ? breakdownFilters : undefined,
         });
-        setBreakdown(brkRes && brkRes.length > 0 ? brkRes : createFallbackBreakdown(safePreset));
+        setBreakdown(brkRes && brkRes.length > 0 ? brkRes : computeBreakdown(safePreset, breakdownDimension, selectedPeriod, activeDataset));
       } catch {
-        setBreakdown(createFallbackBreakdown(safePreset));
+        setBreakdown(computeBreakdown(safePreset, breakdownDimension, selectedPeriod, activeDataset));
       }
     } catch (err: any) {
-      console.warn("DuckDB analytics query failed, falling back to calibrated preset:", err);
-      const fallback = createFallbackMetrics(safePreset, selectedCategory, selectedPeriod, prefCurrency, prefGrouping);
-      setMetrics(fallback);
-      const fallbackBrk = createFallbackBreakdown(safePreset);
-      setBreakdown(fallbackBrk);
+      console.warn("DuckDB backend query offline; running client columnar analytics engine:", err);
+      const computedMetrics = computeMetrics(safePreset, selectedCategory, selectedPeriod, activeDataset, prefCurrency, prefGrouping);
+      setMetrics(computedMetrics);
+      const computedBrk = computeBreakdown(safePreset, breakdownDimension, selectedPeriod, activeDataset);
+      setBreakdown(computedBrk);
     } finally {
       setIsLoading(false);
     }

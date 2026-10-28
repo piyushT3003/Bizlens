@@ -56,6 +56,73 @@ export interface PresetDatasetMetadata {
   findings: { id: string; title: string; delta: string; risk: string; priority: "high" | "medium" | "low" }[];
 }
 
+export const STORAGE_KEY_CUSTOM_DATASETS = "bizlens_custom_datasets";
+export const STORAGE_KEY_CUSTOM_PRESETS = "bizlens_custom_presets";
+export const STORAGE_KEY_ACTIVE_DATASET_ID = "bizlens_active_dataset_id";
+export const STORAGE_KEY_CLIENT_CACHE = "bizlens_client_cache";
+
+export function loadCustomDatasetsFromStorage(): DatasetDetail[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_CUSTOM_DATASETS) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomDatasetsToStorage(datasets: DatasetDetail[]): void {
+  try {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_CUSTOM_DATASETS, JSON.stringify(datasets));
+    }
+  } catch (e) {
+    console.warn("Failed to persist custom datasets to localStorage:", e);
+  }
+}
+
+export function loadCustomPresetsFromStorage(): PresetDatasetMetadata[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_CUSTOM_PRESETS) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomPresetsToStorage(presets: PresetDatasetMetadata[]): void {
+  try {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_CUSTOM_PRESETS, JSON.stringify(presets));
+    }
+  } catch (e) {
+    console.warn("Failed to persist custom presets to localStorage:", e);
+  }
+}
+
+export function hydrateCustomCaches(): void {
+  const storedPresets = loadCustomPresetsFromStorage();
+  for (const p of storedPresets) {
+    customPresetsMap.set(p.id, p);
+  }
+  try {
+    if (typeof window !== "undefined") {
+      const rawCache = localStorage.getItem(STORAGE_KEY_CLIENT_CACHE);
+      if (rawCache) {
+        const parsed = JSON.parse(rawCache);
+        for (const [id, data] of Object.entries(parsed)) {
+          if (!clientPreviewCache.has(id)) {
+            clientPreviewCache.set(id, data as any);
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+hydrateCustomCaches();
+
 export const PRESET_DATASETS: PresetDatasetMetadata[] = [
   {
     id: "ds-retail-q3",
@@ -382,41 +449,84 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
     updated_at: p.updated_at,
   }));
 
+  const storedCustom = loadCustomDatasetsFromStorage();
+  const storedCustomPresets = loadCustomPresetsFromStorage();
+  for (const cp of storedCustomPresets) {
+    customPresetsMap.set(cp.id, cp);
+  }
+
+  const initialDatasets: DatasetSummary[] = [
+    ...storedCustom,
+    ...initialPresets.filter((p) => !storedCustom.some((c) => c.id === p.id)),
+  ];
+
   const defaultPreset = PRESET_DATASETS[0];
   const defaultDetail = presetToDetail(defaultPreset);
 
+  let initialActiveDetail = defaultDetail;
+  let initialActivePreset = defaultPreset;
+  const storedActiveId = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_ACTIVE_DATASET_ID) : null;
+  if (storedActiveId) {
+    const foundCustom = storedCustom.find((d) => d.id === storedActiveId);
+    const foundPreset = PRESET_DATASETS.find((p) => p.id === storedActiveId);
+    const foundCustomPreset = customPresetsMap.get(storedActiveId);
+    if (foundCustom && foundCustomPreset) {
+      initialActiveDetail = foundCustom;
+      initialActivePreset = foundCustomPreset;
+    } else if (foundPreset) {
+      initialActiveDetail = presetToDetail(foundPreset);
+      initialActivePreset = foundPreset;
+    }
+  }
+
   return {
-    datasets: initialPresets,
-    activeDataset: defaultDetail,
-    activePreset: defaultPreset,
+    datasets: initialDatasets,
+    activeDataset: initialActiveDetail,
+    activePreset: initialActivePreset,
     transformations: [],
     isLoading: false,
     error: null,
 
     fetchDatasets: async () => {
       set({ isLoading: true, error: null });
+      const customList = loadCustomDatasetsFromStorage();
       try {
         const serverList = await api.getDatasets();
-        // Merge server datasets with presets (preferring server for matching IDs)
+        // Merge server datasets with custom and presets
         const serverIds = new Set(serverList.map((d) => d.id));
         const merged = [
           ...serverList,
-          ...initialPresets.filter((p) => !serverIds.has(p.id)),
+          ...customList.filter((c) => !serverIds.has(c.id)),
+          ...initialPresets.filter((p) => !serverIds.has(p.id) && !customList.some((c) => c.id === p.id)),
         ];
         set({ datasets: merged, isLoading: false });
 
-        // Always select target dataset from server so live version ID is active
-        const currentActiveId = get().activeDataset?.id;
+        // Always select target dataset from server or custom so active dataset is restored
+        const currentActiveId = get().activeDataset?.id || (typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_ACTIVE_DATASET_ID) : null);
         const targetId = currentActiveId && merged.some((d) => d.id === currentActiveId)
           ? currentActiveId
           : merged[0]?.id;
-        if (targetId) {
+        if (targetId && targetId !== get().activeDataset?.id) {
           await get().selectDataset(targetId);
         }
       } catch {
-        // Safe graceful fallback to preset catalog
-        set({ datasets: initialPresets, isLoading: false });
-        if (!get().activeDataset) {
+        // Safe graceful fallback to merged custom datasets and presets
+        const merged = [
+          ...customList,
+          ...initialPresets.filter((p) => !customList.some((c) => c.id === p.id)),
+        ];
+        set({ datasets: merged, isLoading: false });
+        const currentActiveId = get().activeDataset?.id || (typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_ACTIVE_DATASET_ID) : null);
+        if (currentActiveId) {
+          const customMatch = customList.find((d) => d.id === currentActiveId);
+          const presetMatch = PRESET_DATASETS.find((p) => p.id === currentActiveId);
+          const cachedCustom = customPresetsMap.get(currentActiveId);
+          if (cachedCustom && customMatch) {
+            set({ activePreset: cachedCustom, activeDataset: customMatch });
+          } else if (presetMatch) {
+            set({ activePreset: presetMatch, activeDataset: presetToDetail(presetMatch) });
+          }
+        } else if (!get().activeDataset) {
           set({ activeDataset: defaultDetail, activePreset: defaultPreset });
         }
       }
@@ -424,11 +534,14 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
 
     selectDataset: async (id: string) => {
       set({ isLoading: true, error: null });
+      if (typeof window !== "undefined") {
+        try { localStorage.setItem(STORAGE_KEY_ACTIVE_DATASET_ID, id); } catch {}
+      }
       const isStudent = id === "ds-student-performance" || id.toLowerCase().includes("student") || id === "e59ec97e-94f0-4034-9a5c-54fbae9a6905" || id === "2e1859c6-82d5-4b76-8fa5-19e99edaf670";
       const matchedPreset = isStudent
         ? PRESET_DATASETS.find((p) => p.id === "ds-student-performance")
         : PRESET_DATASETS.find((p) => p.id === id);
-      const cachedCustom = customPresetsMap.get(id);
+      const cachedCustom = customPresetsMap.get(id) || loadCustomPresetsFromStorage().find((p) => p.id === id);
 
       try {
         const detail = await api.getDataset(id);
@@ -519,16 +632,19 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
 
         // 2. Custom preset cached from upload
         if (cachedCustom) {
+          const storedCustomList = loadCustomDatasetsFromStorage();
+          const detail = storedCustomList.find((d) => d.id === id) || presetToDetail(cachedCustom);
           set({
             activePreset: cachedCustom,
-            activeDataset: presetToDetail(cachedCustom),
+            activeDataset: detail,
             isLoading: false,
           });
           return;
         }
 
-        // 3. Local dataset in memory
-        const localDs = get().datasets.find((d) => d.id === id);
+        // 3. Local dataset in memory or storage
+        const allDatasets = [...get().datasets, ...loadCustomDatasetsFromStorage()];
+        const localDs = allDatasets.find((d) => d.id === id);
         if (localDs) {
           const customPreset: PresetDatasetMetadata = {
             id: localDs.id,
@@ -576,6 +692,7 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
               { id: "opt-3", title: "Cross-Channel Efficiency Plan", delta: "+₹3.0L", risk: "Low", priority: "low" },
             ],
           };
+          customPresetsMap.set(localDs.id, customPreset);
           set({
             activePreset: customPreset,
             activeDataset: presetToDetail(customPreset),
@@ -711,6 +828,21 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
           };
 
           customPresetsMap.set(datasetId, customPreset);
+          const currentCustoms = loadCustomDatasetsFromStorage().filter((d) => d.id !== datasetId);
+          saveCustomDatasetsToStorage([detail, ...currentCustoms]);
+          const currentPresets = loadCustomPresetsFromStorage().filter((p) => p.id !== datasetId);
+          saveCustomPresetsToStorage([customPreset, ...currentPresets]);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(STORAGE_KEY_ACTIVE_DATASET_ID, datasetId);
+              const cacheMap: Record<string, any> = {};
+              const sampleRows = profile.rows.slice(0, 2000);
+              cacheMap[datasetId] = { columns: profile.headers, rows: sampleRows };
+              localStorage.setItem(STORAGE_KEY_CLIENT_CACHE, JSON.stringify(cacheMap));
+            } catch (e) {
+              console.warn("Storage quota exceeded or unavailable:", e);
+            }
+          }
 
           set((state) => ({
             activeDataset: detail,
@@ -758,6 +890,12 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
           console.warn("Server delete dataset response:", e);
         }
 
+        customPresetsMap.delete(id);
+        const curCustoms = loadCustomDatasetsFromStorage().filter((d) => d.id !== id);
+        saveCustomDatasetsToStorage(curCustoms);
+        const curPresets = loadCustomPresetsFromStorage().filter((p) => p.id !== id);
+        saveCustomPresetsToStorage(curPresets);
+
         const remaining = get().datasets.filter((d) => d.id !== id);
         set({ datasets: remaining, isLoading: false });
 
@@ -793,9 +931,86 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
             ...current,
             active_mapping: mapping,
           };
+
+          // Re-evaluate custom preset metrics if cached rows are available
+          const cached = clientPreviewCache.get(id);
+          let updatedPreset = get().activePreset;
+          if (cached && cached.rows && cached.rows.length > 0) {
+            let revCol: string | null = null;
+            let costCol: string | null = null;
+            let profitCol: string | null = null;
+            let catCol: string | null = null;
+            for (const [colName, item] of Object.entries(mapping)) {
+              const r = String(item.role).toLowerCase();
+              if ((r === "revenue" || r === "sales") && !revCol) revCol = colName;
+              if (r === "cost" && !costCol) costCol = colName;
+              if ((r === "profit" || r === "margin") && !profitCol) profitCol = colName;
+              if (r === "category" && !catCol) catCol = colName;
+            }
+
+            if (revCol) {
+              let totalRev = 0;
+              let totalCost = 0;
+              let totalProfit = 0;
+              const catCounts: Record<string, number> = {};
+
+              for (const row of cached.rows) {
+                const parseNum = (v: any) => {
+                  if (typeof v === "number") return isNaN(v) ? 0 : v;
+                  if (!v) return 0;
+                  const n = parseFloat(String(v).replace(/[$₹€£,\s]/g, ""));
+                  return isNaN(n) ? 0 : n;
+                };
+                const rVal = parseNum(row[revCol]);
+                totalRev += rVal;
+                if (costCol) totalCost += parseNum(row[costCol]);
+                if (profitCol) totalProfit += parseNum(row[profitCol]);
+                if (catCol && row[catCol]) {
+                  const cat = String(row[catCol]).trim();
+                  catCounts[cat] = (catCounts[cat] || 0) + 1;
+                }
+              }
+
+              if (!profitCol && costCol) {
+                totalProfit = totalRev - totalCost;
+              } else if (!profitCol && !costCol) {
+                totalProfit = Math.round(totalRev * 0.42);
+              }
+
+              const marginPct = totalRev > 0 ? Number(((totalProfit / totalRev) * 100).toFixed(1)) : 0;
+              const cats = Object.entries(catCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6)
+                .map(([name, count], i) => ({
+                  name,
+                  share_pct: Number(((count / cached.rows.length) * 100).toFixed(1)),
+                  delta_formatted: `+${(8.4 - i * 1.8).toFixed(1)}%`,
+                }));
+
+              updatedPreset = {
+                ...updatedPreset,
+                revenue_raw: Math.round(totalRev),
+                revenue_formatted: formatCurrencyAmount(totalRev, "INR", "lakh_crore"),
+                gross_profit_formatted: formatCurrencyAmount(totalProfit, "INR", "lakh_crore"),
+                gross_margin_pct: marginPct,
+                categories: cats.length > 0 ? cats : updatedPreset.categories,
+                is_commercial: true,
+              };
+
+              customPresetsMap.set(id, updatedPreset);
+              const curPresets = loadCustomPresetsFromStorage().filter((p) => p.id !== id);
+              saveCustomPresetsToStorage([updatedPreset, ...curPresets]);
+            }
+          }
+
+          // Persist updated detail in localStorage
+          const curCustoms = loadCustomDatasetsFromStorage().filter((d) => d.id !== id);
+          saveCustomDatasetsToStorage([updated, ...curCustoms]);
+
           set((state) => ({
             activeDataset: updated,
-            datasets: state.datasets.map((d) => (d.id === id ? { ...d, active_mapping: mapping } : d)),
+            activePreset: updatedPreset,
+            datasets: state.datasets.map((d) => (d.id === id ? updated : d)),
             isLoading: false,
           }));
         } else {

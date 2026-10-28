@@ -34,12 +34,10 @@ htmlcov/
 *.env
 
 # Local database and cache storage (Keep sample datasets)
-storage/datasets/*
+storage/
 !storage/datasets/sample*
-storage/cache/
-backend/storage/datasets/*
+backend/storage/
 !backend/storage/datasets/sample*
-backend/storage/cache/
 *.db-journal
 *.duckdb.wal
 
