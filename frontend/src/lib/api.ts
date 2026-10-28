@@ -323,16 +323,25 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     },
   });
 
+  const contentType = res.headers.get("content-type") || "";
+
   if (!res.ok) {
     let errData: any;
     try {
-      errData = await res.json();
+      if (contentType.includes("application/json")) {
+        errData = await res.json();
+      }
     } catch {
-      throw new ApiError("HTTP_ERROR", res.statusText, res.status);
+      // ignore
     }
-    const code = errData?.error?.code || "API_ERROR";
+    const code = errData?.error?.code || "HTTP_ERROR";
     const message = errData?.error?.message || res.statusText;
     throw new ApiError(code, message, res.status, errData?.error?.details);
+  }
+
+  // If status is OK but returned HTML (e.g. Vercel SPA index.html returned for missing backend API route)
+  if (contentType.includes("text/html")) {
+    throw new ApiError("NOT_FOUND", `Endpoint returned HTML instead of JSON: ${url}`, 404);
   }
 
   return res.json() as Promise<T>;

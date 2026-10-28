@@ -61,28 +61,28 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     created_at: "2026-09-30T18:00:00Z",
     updated_at: "2026-10-06T12:00:00Z",
     currency_symbol: "₹",
-    revenue_formatted: "₹1,12,93,000",
-    revenue_raw: 11293000,
-    gross_profit_formatted: "₹24,50,580",
-    gross_margin_pct: 21.7,
-    total_orders: 10000,
-    exchange_net: "₹12.48L Net",
-    exchange_gross: "₹12.40L Gross",
-    exchange_insights: "10+ Insights",
-    exchange_features: "109+ Features",
+    revenue_formatted: "₹2.34 Cr",
+    revenue_raw: 23425426.50,
+    gross_profit_formatted: "₹1.37 Cr",
+    gross_margin_pct: 58.65,
+    total_orders: 7138,
+    exchange_net: "₹2.34 Cr Net",
+    exchange_gross: "₹2.34 Cr Gross",
+    exchange_insights: "12+ Insights",
+    exchange_features: "14 Columns",
     exchange_kpis: "10 KPIs",
-    exchange_solved: "1899+ Solved",
+    exchange_solved: "10,000 Records",
     map_nodes: 10000,
     map_clusters: 130,
     map_flows: 1301,
     map_throughput: 1336,
-    map_ingestion_stream: "₹12.48 L Ingestion",
+    map_ingestion_stream: "₹2.34 Cr Ingestion",
     map_active_clusters: 85,
     categories: [
-      { name: "Electronics", share_pct: 48.2, delta_formatted: "+₹24.50 L" },
-      { name: "Apparel", share_pct: 25.0, delta_formatted: "+₹14.20 L" },
-      { name: "Home & Kitchen", share_pct: 16.1, delta_formatted: "-₹6.10 L" },
-      { name: "Beauty", share_pct: 10.7, delta_formatted: "+₹4.00 L" },
+      { name: "Apparel", share_pct: 35.40, delta_formatted: "+₹82.93 L" },
+      { name: "Electronics", share_pct: 24.56, delta_formatted: "+₹57.54 L" },
+      { name: "Beauty & Wellness", share_pct: 21.02, delta_formatted: "+₹49.23 L" },
+      { name: "Home & Kitchen", share_pct: 19.02, delta_formatted: "+₹44.55 L" },
     ],
     root_anomaly_title: "Q3 Margin Anomaly Analysis",
     root_anomaly_bullets: [
@@ -429,15 +429,12 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
         });
       } catch (err: any) {
         console.warn(`Failed to fetch dataset ${id} from server; falling back to preset if available`, err);
-        if (matchedPreset) {
-          set({
-            activePreset: matchedPreset,
-            activeDataset: presetToDetail(matchedPreset),
-            isLoading: false,
-          });
-        } else {
-          set({ error: err.message, isLoading: false });
-        }
+        const fallbackPreset = matchedPreset || PRESET_DATASETS.find((p) => p.id === "ds-retail-q3") || PRESET_DATASETS[0];
+        set({
+          activePreset: fallbackPreset,
+          activeDataset: presetToDetail(fallbackPreset),
+          isLoading: false,
+        });
       }
     },
 
