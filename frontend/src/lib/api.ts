@@ -347,6 +347,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export const clientPreviewCache = new Map<string, { columns: string[]; rows: Record<string, any>[] }>();
+
 export const api = {
   // Datasets
   async getDatasets(): Promise<DatasetSummary[]> {
@@ -370,7 +372,22 @@ export const api = {
   },
 
   async getDatasetPreview(id: string, limit: number = 50, offset: number = 0): Promise<DatasetPreview> {
-    return request<DatasetPreview>(`/api/v1/datasets/${id}/preview?limit=${limit}&offset=${offset}`);
+    try {
+      return await request<DatasetPreview>(`/api/v1/datasets/${id}/preview?limit=${limit}&offset=${offset}`);
+    } catch (err) {
+      if (clientPreviewCache.has(id)) {
+        const cached = clientPreviewCache.get(id)!;
+        const paged = cached.rows.slice(offset, offset + limit);
+        return {
+          dataset_id: id,
+          version_number: 1,
+          columns: cached.columns,
+          rows: paged,
+          total_rows: cached.rows.length,
+        };
+      }
+      throw err;
+    }
   },
 
   async getDatasetProfile(id: string): Promise<any> {

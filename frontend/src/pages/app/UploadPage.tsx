@@ -128,17 +128,28 @@ export const UploadPage: React.FC = () => {
       setIngestionModal({
         isOpen: true,
         datasetName: file.name.replace(/\.[^/.]+$/, ""),
-        rowCount: 15000,
-        colCount: 14,
+        rowCount: 10000,
+        colCount: 12,
         fileName: file.name,
         isUpload: true,
       });
 
       const detail = await uploadDataset(file);
+      setIngestionModal((prev) => ({
+        ...prev,
+        rowCount: detail.row_count,
+        colCount: detail.col_count,
+        datasetName: detail.name,
+      }));
       if (detail.active_mapping) {
         setLocalMapping(detail.active_mapping);
       }
     } catch (err: any) {
+      console.error("Upload error:", err);
+      setNotification({
+        type: "error",
+        message: `Failed to process dataset: ${err.message || "Unknown error"}`,
+      });
       setIngestionModal((prev) => ({ ...prev, isOpen: false }));
       setCurrentStep(1);
     }

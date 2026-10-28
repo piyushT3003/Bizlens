@@ -15,6 +15,8 @@ import { useDatasetStore, PRESET_DATASETS, PresetDatasetMetadata } from "@/hooks
 import { useSettingsStore, getCurrencySymbol, formatCurrencyAmount } from "@/hooks/useSettings";
 import {
   api,
+  DatasetDetail,
+  BreakdownItem,
   ForecastObservatoryData,
   ScenarioFlowNode,
   AnomalyItem,
@@ -400,21 +402,49 @@ function createFallbackObservatory(
 function createFallbackTrajectory(
   preset: PresetDatasetMetadata,
   currency: string = "INR",
-  grouping: string = "lakh_crore"
+  grouping: string = "lakh_crore",
+  selectedCategory?: string | null,
+  activeDataset?: DatasetDetail | null,
+  breakdown?: BreakdownItem[] | null
 ): TrajectoryResponse {
   const isCommercial = (preset.revenue_raw || 0) > 0 && preset.revenue_formatted !== "--";
-  const baseRev = preset.revenue_raw || 23425426.50;
-  const baseOrders = preset.total_orders || 7138;
+  const baseRev = (activeDataset as any)?.revenue_raw || preset.revenue_raw || 23425426.50;
+  const baseOrders = activeDataset?.row_count || preset.total_orders || 7138;
+
+  let catShare = 1.0;
+  let catName = "";
+
+  if (selectedCategory && selectedCategory !== "All Categories" && selectedCategory !== "all") {
+    catName = selectedCategory;
+    const fromBreakdown = breakdown?.find(
+      (b) => b.dimension_value.toLowerCase() === selectedCategory.toLowerCase()
+    );
+    if (fromBreakdown && fromBreakdown.share_pct) {
+      catShare = Math.max(0.05, Math.min(1.0, fromBreakdown.share_pct / 100));
+    } else {
+      const found = preset.categories?.find(
+        (c) => c.name.toLowerCase() === selectedCategory.toLowerCase()
+      );
+      if (found && found.share_pct) {
+        catShare = Math.max(0.05, Math.min(1.0, found.share_pct / 100));
+      } else {
+        catShare = 0.32;
+      }
+    }
+  }
+
+  const effectiveRev = Math.round(baseRev * catShare);
+  const effectiveOrders = Math.max(1, Math.round(baseOrders * catShare));
 
   const points: TrajectoryPoint[] = [
     {
       label: "Jul 24",
       month_key: "2024-07",
-      revenue: isCommercial ? Math.round(baseRev * 0.28) : 0,
-      orders: Math.round(baseOrders * 0.28),
+      revenue: isCommercial ? Math.round(effectiveRev * 0.28) : 0,
+      orders: Math.round(effectiveOrders * 0.28),
       formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(baseRev * 0.28), currency, grouping)
-        : `${Math.round(baseOrders * 0.28).toLocaleString()} orders`,
+        ? formatCurrencyAmount(Math.round(effectiveRev * 0.28), currency, grouping)
+        : `${Math.round(effectiveOrders * 0.28).toLocaleString()} orders`,
       delta_pct: 5.4,
       projected: false,
       status: "positive",
@@ -422,11 +452,11 @@ function createFallbackTrajectory(
     {
       label: "Aug 24",
       month_key: "2024-08",
-      revenue: isCommercial ? Math.round(baseRev * 0.33) : 0,
-      orders: Math.round(baseOrders * 0.33),
+      revenue: isCommercial ? Math.round(effectiveRev * 0.33) : 0,
+      orders: Math.round(effectiveOrders * 0.33),
       formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(baseRev * 0.33), currency, grouping)
-        : `${Math.round(baseOrders * 0.33).toLocaleString()} orders`,
+        ? formatCurrencyAmount(Math.round(effectiveRev * 0.33), currency, grouping)
+        : `${Math.round(effectiveOrders * 0.33).toLocaleString()} orders`,
       delta_pct: 12.8,
       projected: false,
       status: "positive",
@@ -434,11 +464,11 @@ function createFallbackTrajectory(
     {
       label: "Sep 24",
       month_key: "2024-09",
-      revenue: isCommercial ? Math.round(baseRev * 0.39) : 0,
-      orders: Math.round(baseOrders * 0.39),
+      revenue: isCommercial ? Math.round(effectiveRev * 0.39) : 0,
+      orders: Math.round(effectiveOrders * 0.39),
       formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(baseRev * 0.39), currency, grouping)
-        : `${Math.round(baseOrders * 0.39).toLocaleString()} orders`,
+        ? formatCurrencyAmount(Math.round(effectiveRev * 0.39), currency, grouping)
+        : `${Math.round(effectiveOrders * 0.39).toLocaleString()} orders`,
       delta_pct: 18.2,
       projected: false,
       status: "positive",
@@ -446,11 +476,11 @@ function createFallbackTrajectory(
     {
       label: "Oct 24 (Proj)",
       month_key: "2024-10",
-      revenue: isCommercial ? Math.round(baseRev * 0.42) : 0,
-      orders: Math.round(baseOrders * 0.42),
+      revenue: isCommercial ? Math.round(effectiveRev * 0.42) : 0,
+      orders: Math.round(effectiveOrders * 0.42),
       formatted_revenue: isCommercial
-        ? formatCurrencyAmount(Math.round(baseRev * 0.42), currency, grouping)
-        : `${Math.round(baseOrders * 0.42).toLocaleString()} orders`,
+        ? formatCurrencyAmount(Math.round(effectiveRev * 0.42), currency, grouping)
+        : `${Math.round(effectiveOrders * 0.42).toLocaleString()} orders`,
       delta_pct: 7.7,
       projected: true,
       status: "positive",
@@ -462,7 +492,9 @@ function createFallbackTrajectory(
     dataset_id: preset.id,
     dataset_name: preset.name,
     unit: isCommercial ? "currency" : "orders",
-    metric_label: isCommercial ? "Revenue" : "Orders",
+    metric_label: isCommercial
+      ? catName ? `${catName} Revenue` : "Revenue"
+      : catName ? `${catName} Orders` : "Orders",
     total_months: 4,
     points,
     max_value: Math.max(...vals),
@@ -627,7 +659,7 @@ export const DashboardPage: React.FC = () => {
 
   // Multi-month Trajectory Engine: fetches authentic DuckDB timeline, never hardcoded to 4 months
   const [trajectoryData, setTrajectoryData] = useState<TrajectoryResponse | null>(() =>
-    createFallbackTrajectory(safePreset, activeCurrency, activeGrouping)
+    createFallbackTrajectory(safePreset, activeCurrency, activeGrouping, selectedCategory, activeDataset, breakdown)
   );
   const [isTrajectoryLoading, setIsTrajectoryLoading] = useState(false);
   const [trajectoryHorizon, setTrajectoryHorizon] = useState<"3m" | "6m" | "12m" | "all">("all");
@@ -641,17 +673,21 @@ export const DashboardPage: React.FC = () => {
         if (data && data.points && data.points.length > 0) {
           setTrajectoryData(data);
         } else {
-          setTrajectoryData(createFallbackTrajectory(safePreset, activeCurrency, activeGrouping));
+          setTrajectoryData(
+            createFallbackTrajectory(safePreset, activeCurrency, activeGrouping, selectedCategory, activeDataset, breakdown)
+          );
         }
       })
       .catch((err) => {
         console.warn("Trajectory fetch failed, utilizing calibrated multi-month series:", err);
-        setTrajectoryData(createFallbackTrajectory(safePreset, activeCurrency, activeGrouping));
+        setTrajectoryData(
+          createFallbackTrajectory(safePreset, activeCurrency, activeGrouping, selectedCategory, activeDataset, breakdown)
+        );
       })
       .finally(() => {
         setIsTrajectoryLoading(false);
       });
-  }, [activeDataset?.id, safePreset.id, selectedCategory, trajectoryHorizon, activeCurrency, activeGrouping]);
+  }, [activeDataset?.id, safePreset.id, selectedCategory, trajectoryHorizon, activeCurrency, activeGrouping, activeDataset, breakdown]);
 
   // Dynamic Trajectory Points: reflects 100% authentic timeline from DuckDB
   const activePoints = useMemo(() => {
@@ -1831,8 +1867,16 @@ export const DashboardPage: React.FC = () => {
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <ChartFrame
-              title={`${trajectoryMetricLabel} Trajectory (Monthly)`}
-              subtitle={`Verified Performance Trajectory (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter dashboard by period`}
+              title={
+                selectedCategory && selectedCategory !== "All Categories"
+                  ? `${selectedCategory} Trajectory (Monthly)`
+                  : `${trajectoryMetricLabel} Trajectory (Monthly)`
+              }
+              subtitle={
+                selectedCategory && selectedCategory !== "All Categories"
+                  ? `Filtered by Category: ${selectedCategory} (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter by period`
+                  : `Verified Performance Trajectory (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter dashboard by period`
+              }
               className="lg:col-span-2 flex flex-col justify-between"
               headerAction={
                 <div className="relative z-30 flex items-center gap-1 bg-surface-elevated/95 p-1 rounded-xl border border-surface-border shadow-sm">
@@ -2048,7 +2092,7 @@ export const DashboardPage: React.FC = () => {
                         </>
                       ) : numBars > 0 ? (
                         <>
-                          Verified Trajectory ({numBars}M): <strong className="text-text-main">
+                          Verified Trajectory ({numBars}M){selectedCategory && selectedCategory !== "All Categories" ? ` • ${selectedCategory}` : ""}: <strong className="text-text-main">
                             {trajectoryMetricType === "currency"
                               ? `${formatCurrency(monthlyTrajectory.reduce((acc, p) => acc + p.val, 0), sym, activeGrouping)} Net Revenue`
                               : `${monthlyTrajectory.reduce((acc, p) => acc + p.orders, 0).toLocaleString()} Total Orders`
