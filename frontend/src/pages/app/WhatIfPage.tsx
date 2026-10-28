@@ -110,9 +110,10 @@ export const WhatIfPage: React.FC = () => {
   // Helper for deterministic client calculation when switching presets
   const calculatePresetSimulation = useCallback(
     (preset: typeof activePreset, drv: DriverAdjustment, assump: ElasticityAssumptions): ScenarioSimulationResponse => {
-      const baseRev = preset.revenue_raw;
-      const baseUnits = preset.total_orders;
-      const baseMargin = preset.gross_margin_pct / 100;
+      const p = preset || PRESET_DATASETS[0];
+      const baseRev = (p.revenue_raw && p.revenue_raw > 0) ? p.revenue_raw : 23425426.50;
+      const baseUnits = (p.total_orders && p.total_orders > 0) ? p.total_orders : 7138;
+      const baseMargin = (p.gross_margin_pct && p.gross_margin_pct > 0 ? p.gross_margin_pct : 58.65) / 100;
       const baseGp = baseRev * baseMargin;
       const baseCogs = baseRev - baseGp;
       const p0 = baseRev / baseUnits;
@@ -141,7 +142,7 @@ export const WhatIfPage: React.FC = () => {
       const gpDeltaPct = (gpDeltaAbs / baseGp) * 100;
       const volDeltaAbs = q1 - baseUnits;
       const volDeltaPct = (volDeltaAbs / baseUnits) * 100;
-      const marginDeltaPts = margin1 - preset.gross_margin_pct;
+      const marginDeltaPts = margin1 - (p.gross_margin_pct || 58.65);
 
       const formatCurrency = (val: number) => {
         return formatCurrencyAmount(val, activeCurrency, activeGrouping);
@@ -223,7 +224,7 @@ export const WhatIfPage: React.FC = () => {
       }
 
       const res: ScenarioSimulationResponse = {
-        dataset_id: preset.id,
+        dataset_id: p.id,
         baseline_metrics: {
           revenue: baseRev,
           revenue_formatted: formatCurrency(baseRev),
@@ -233,7 +234,7 @@ export const WhatIfPage: React.FC = () => {
           cogs_formatted: formatCurrency(baseCogs),
           gross_profit: baseGp,
           gross_profit_formatted: formatCurrency(baseGp),
-          gross_margin_pct: preset.gross_margin_pct,
+          gross_margin_pct: p.gross_margin_pct || 58.65,
           avg_unit_price: Number(p0.toFixed(2)),
           avg_unit_cost: Number(c0.toFixed(2)),
         },
@@ -265,7 +266,7 @@ export const WhatIfPage: React.FC = () => {
         waterfall,
         sensitivity_matrix,
         assumptions: assump,
-        strategic_summary: `Deterministic microeconomic simulation for ${preset.name}. Under price delta ${drv.price_pct}% (elasticity ${assump.price_elasticity}) and cost delta ${drv.cost_pct}%, projected revenue shifts to ${formatCurrency(r1)} (${revDeltaPct >= 0 ? "+" : ""}${revDeltaPct.toFixed(1)}%) with gross profit ${formatCurrency(gp1)} (${gpDeltaPct >= 0 ? "+" : ""}${gpDeltaPct.toFixed(1)}%).`,
+        strategic_summary: `Deterministic microeconomic simulation for ${p.name}. Under price delta ${drv.price_pct}% (elasticity ${assump.price_elasticity}) and cost delta ${drv.cost_pct}%, projected revenue shifts to ${formatCurrency(r1)} (${revDeltaPct >= 0 ? "+" : ""}${revDeltaPct.toFixed(1)}%) with gross profit ${formatCurrency(gp1)} (${gpDeltaPct >= 0 ? "+" : ""}${gpDeltaPct.toFixed(1)}%).`,
         fact_badges: [
           { label: "Baseline Rev", value: formatCurrency(baseRev), verified: true },
           { label: "Projected Rev", value: formatCurrency(r1), verified: true },
