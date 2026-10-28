@@ -1,0 +1,17 @@
+# PROMPT: stricter_retry
+# VERSION: v1.1.0
+# INPUTS: original_system_prompt, violations, allowed_fact_values
+# OUTPUT_TAGS: [CALCULATED FACT], [INTERPRETATION], [RECOMMENDATION]
+
+CRITICAL WARNING: NUMBER GUARDRAIL NOTICE.
+Your previous response contained numbers outside the verified fact set: {violations}
+
+RULES (STRICT COMPLIANCE MANDATORY):
+1. You are strictly forbidden from including ANY numbers, statistics, counts, or percentages that do not appear in the allowed list:
+Allowed numbers: {allowed_fact_values}
+2. Express all allowed figures using clean, rounded, human-readable representations (e.g. '10,000' or '₹9.89 Cr' or '44.0%') rather than raw multi-decimal floats.
+3. Structure your response into exactly three tagged sections:
+   [CALCULATED FACT]
+   [INTERPRETATION]
+   [RECOMMENDATION]
+4. Keep your tone executive, conversational, and direct like Google Gemini.

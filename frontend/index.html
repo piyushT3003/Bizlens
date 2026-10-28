@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BizLens — Turn Your Data Into Decisions</title>
+    <meta name="description" content="AI-powered Business Intelligence & Decision Support Platform." />
+
+    <!-- Google Fonts: Space Grotesk & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Mandatory Synchronous Theme Pre-Paint Initialization (Zero-Flash) -->
+    <script>
+      (function() {
+        try {
+          var savedTheme = localStorage.getItem("bizlens_theme");
+          var theme = savedTheme;
+          if (!theme || theme === "system") {
+            theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+          if (["dark", "light", "hybrid"].indexOf(theme) !== -1) {
+            document.documentElement.setAttribute("data-theme", theme);
+          } else {
+            document.documentElement.setAttribute("data-theme", "dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- BizLens Netlify Runtime Config (Paste your Gemini API key below or set in Settings -> AI Key Vault) -->
+    <script>
+      window.__BIZLENS_CONFIG__ = {
+        GEMINI_API_KEY: ""
+      };
+    </script>
+  </head>
+  <body class="bg-surface-base text-text-main antialiased selection:bg-brand-orange selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
