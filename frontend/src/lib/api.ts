@@ -1,6 +1,13 @@
 /**
  * BizLens API Client: Type-safe client for FastAPI backend endpoints.
  */
+import {
+  getActiveGeminiApiKey,
+  isGeminiConfigured,
+  saveGeminiApiKey,
+  testGeminiApiKey,
+  STORAGE_KEY_GEMINI_KEY,
+} from "./geminiClient";
 
 export interface ColumnMappingItem {
   original_name: string;
@@ -884,23 +891,49 @@ export const api = {
   },
 
   async getApiKeyStatus(): Promise<APIKeyStatusData> {
-    return request<APIKeyStatusData>("/api/v1/settings/api-key/status");
+    try {
+      return await request<APIKeyStatusData>("/api/v1/settings/api-key/status");
+    } catch {
+      const configured = isGeminiConfigured();
+      const vaultKey = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_GEMINI_KEY) : null;
+      return {
+        provider: "google_gemini",
+        is_configured: configured,
+        source: vaultKey ? "custom_vault" : (import.meta as any).env?.VITE_GEMINI_API_KEY ? "env_variable" : "none",
+        is_valid: configured,
+      };
+    }
   },
 
   async updateApiKey(apiKey?: string, provider: string = "google_gemini"): Promise<APIKeyStatusData> {
-    return request<APIKeyStatusData>("/api/v1/settings/api-key", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, provider }),
-    });
+    try {
+      return await request<APIKeyStatusData>("/api/v1/settings/api-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, provider }),
+      });
+    } catch {
+      saveGeminiApiKey(apiKey || "");
+      const configured = !!(apiKey && apiKey.trim());
+      return {
+        provider,
+        is_configured: configured,
+        source: configured ? "custom_vault" : "none",
+        is_valid: configured,
+      };
+    }
   },
 
   async testApiKey(apiKey?: string, provider: string = "google_gemini"): Promise<{ is_valid: boolean; message: string; model?: string }> {
-    return request<{ is_valid: boolean; message: string; model?: string }>("/api/v1/settings/api-key/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, provider }),
-    });
+    try {
+      return await request<{ is_valid: boolean; message: string; model?: string }>("/api/v1/settings/api-key/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, provider }),
+      });
+    } catch {
+      return await testGeminiApiKey(apiKey);
+    }
   },
 
   async getSessions(): Promise<SessionData[]> {

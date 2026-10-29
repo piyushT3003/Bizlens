@@ -43,6 +43,7 @@ import { EvidenceDrawer, LineageStep } from "@/components/ui/EvidenceDrawer";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { GeminiKeyModal } from "@/components/chat/GeminiKeyModal";
 import { ThinkingCard, ThinkingStep } from "@/components/chat/ThinkingCard";
+import { isGeminiConfigured, askGeminiBusinessIntelligence } from "@/lib/geminiClient";
 import {
   api,
   getApiUrl,
@@ -444,6 +445,50 @@ export const AskPage: React.FC = () => {
         console.log("Stream generation aborted by user.");
       } else {
         console.warn("Stream API offline or unreachable, using grounded intelligence engine:", err);
+
+        if (isGeminiConfigured()) {
+          try {
+            setStreamStatus({
+              step: "reasoning",
+              label: "Reasoning with Google Gemini Intelligence...",
+              progress: 75,
+            });
+
+            const geminiRes = await askGeminiBusinessIntelligence({
+              query: queryText,
+              contextMode,
+              activeDataset,
+              activePreset,
+              sessionId: targetSessionId,
+            });
+
+            const finalDuration = Math.max(0.6, (performance.now() - startTimestamp) / 1000);
+            const assistantMsgId = `asst_gemini_${Date.now()}`;
+            const assistantMsg: ChatMessageResponse = {
+              id: assistantMsgId,
+              session_id: targetSessionId,
+              role: "assistant",
+              blocks: geminiRes.blocks as any,
+              evidence_refs: geminiRes.evidence_refs,
+              show_your_work: geminiRes.show_your_work,
+              created_at: new Date().toISOString(),
+            };
+
+            setThoughtDurations((prev) => ({
+              ...prev,
+              [assistantMsgId]: finalDuration,
+            }));
+
+            setMessages((prev) => [...prev, assistantMsg]);
+            setStreamingBlocks([]);
+            setStreamingMetadata(null);
+            loadSessions();
+            return;
+          } catch (geminiErr) {
+            console.warn("Live Gemini API call failed, falling back to deterministic template:", geminiErr);
+          }
+        }
+
         const dsName = activeDataset?.name || activePreset?.name || "Active Dataset";
         const revRaw = (activeDataset as any)?.revenue_raw || activePreset?.revenue_raw || 0;
         const isCommercial = revRaw > 0 && activePreset?.revenue_formatted !== "--";
