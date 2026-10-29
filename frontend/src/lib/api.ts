@@ -894,6 +894,23 @@ export const api = {
     try {
       return await request<APIKeyStatusData>("/api/v1/settings/api-key/status");
     } catch {
+      try {
+        const proxyRes = await fetch("/api/gemini?action=status");
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          if (proxyData.is_configured) {
+            return {
+              provider: "google_gemini",
+              is_configured: true,
+              source: "server_secret",
+              is_valid: true,
+              masked_key: "•••••••• (Vercel Server Secret)",
+            };
+          }
+        }
+      } catch {
+        // continue to client vault
+      }
       const configured = isGeminiConfigured();
       const vaultKey = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_GEMINI_KEY) : null;
       return {
