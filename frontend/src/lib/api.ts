@@ -186,8 +186,6 @@ export interface TrajectoryResponse {
   points: TrajectoryPoint[];
   max_value: number;
   min_value: number;
-  metric_label?: string;
-  unit?: string;
 }
 
 export interface MetricCatalogItem {

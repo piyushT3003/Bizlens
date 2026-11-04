@@ -241,19 +241,6 @@ class MetricRegistry:
                 )
                 continue
 
-            if m_id == "total_orders":
-                if "id" in role_to_column_map and role_to_column_map["id"]:
-                    resolved["id"] = role_to_column_map["id"]
-                result[m_id] = MetricAvailability(
-                    metric_id=m_id,
-                    label=metric.label,
-                    is_available=True,
-                    missing_roles=[],
-                    resolved_columns=resolved,
-                    reason=None,
-                )
-                continue
-
             for role in metric.required_roles:
                 if role in role_to_column_map and role_to_column_map[role]:
                     resolved[role] = role_to_column_map[role]
@@ -302,9 +289,7 @@ class MetricRegistry:
             else:
                 raise ValueError("Metric 'gross_margin_pct' requires role 'revenue' and ('cost' or 'profit' or 'margin')")
 
-        if metric_id == "total_orders":
-            if "id" in role_to_column_map and role_to_column_map["id"]:
-                return f'COUNT(DISTINCT "{role_to_column_map["id"]}")'
+        if metric_id == "total_orders" and "id" not in role_to_column_map:
             return "COUNT(*)"
 
         metric = self.get_metric(metric_id)

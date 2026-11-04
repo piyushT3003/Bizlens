@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   api,
@@ -956,11 +955,8 @@ export const WhatIfPage: React.FC = () => {
       </div>
 
       {/* Save Scenario Modal */}
-      {saveModalOpen && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-          onWheel={(e) => e.stopPropagation()}
-        >
+      {saveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-full max-w-md rounded-2xl border border-surface-border bg-surface-main p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-surface-border">
               <h3 className="text-sm font-bold text-text-main">Save Scenario Checkpoint</h3>
@@ -1007,16 +1003,12 @@ export const WhatIfPage: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {/* Compare Scenarios Modal */}
-      {compareModalOpen && compareData && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-          onWheel={(e) => e.stopPropagation()}
-        >
+      {compareModalOpen && compareData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-full max-w-4xl rounded-2xl border border-surface-border bg-surface-main p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-surface-border">
               <div>
@@ -1112,8 +1104,7 @@ export const WhatIfPage: React.FC = () => {
               </Button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {/* Evidence & Lineage Drawer */}

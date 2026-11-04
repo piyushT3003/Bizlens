@@ -18,8 +18,8 @@ ROLE_PRIORITY_NAMES: Dict[str, List[str]] = {
         "wholesale_cost", "expense", "cogs_amount", "spend", "shipping_cost"
     ],
     "quantity": [
-        "quantity", "units", "qty", "units_sold",
-        "order_qty", "sales_volume", "pieces", "cartons", "packs"
+        "quantity", "units", "qty", "volume", "items", "units_sold",
+        "order_qty", "sales_volume", "pieces", "count"
     ],
     "category": [
         "category", "productcategory", "product_category", "item_category",
@@ -58,7 +58,6 @@ ROLE_PRIORITY_NAMES: Dict[str, List[str]] = {
 PENALIZED_NAMES: Dict[str, List[str]] = {
     "revenue": ["profit", "cost", "cogs", "discount", "qty", "quantity", "units", "id"],
     "profit": ["revenue", "sales", "cost", "cogs", "quantity", "discount", "id"],
-    "quantity": ["score", "paper", "hour", "sleep", "study", "age", "rating", "index", "id", "year", "date", "price", "amount", "cost", "revenue", "profit", "margin", "discount", "percent", "pct", "km", "capacity"],
     "category": ["priority", "order_priority", "mode", "ship_mode", "status", "is_", "flag", "gender"],
     "date": ["is_", "new", "flag", "status", "ship_date", "dispatch_date", "due_date"],
     "region": ["postal", "zip", "code", "pincode"],
@@ -138,13 +137,6 @@ def resolve_role_to_col(mapping: Optional[Dict[str, Any]]) -> Dict[str, str]:
         clean_name = col_name.lower().replace(" ", "_")
         if role == "revenue" and ("profit" in clean_name or clean_name == "profit"):
             role = "profit"
-
-        # Safeguard quantity role: only accept columns genuinely representing commercial unit/item counts
-        if role == "quantity":
-            valid_qty = any(k in clean_name for k in ["quantity", "qty", "units", "pieces", "cartons", "packs", "order_qty", "units_sold", "sales_volume", "seats"])
-            is_penalized = any(p in clean_name for p in ["score", "paper", "hour", "sleep", "study", "age", "rating", "index", "km", "capacity", "like", "click", "share", "view", "reach", "impression", "follower"])
-            if not valid_qty or is_penalized:
-                continue
 
         if role not in role_candidates:
             role_candidates[role] = []

@@ -11,7 +11,6 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import duckdb
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -371,8 +370,7 @@ class TransformationService:
             sample_before: List[Dict[str, Any]] = []
             if sample_diff_query:
                 try:
-                    query_to_run = sample_diff_query if "LIMIT" in sample_diff_query else f"{sample_diff_query} LIMIT 5"
-                    sample_before = self._fetch_records(con, query_to_run)
+                    sample_before = self._fetch_records(con, f"{sample_diff_query} LIMIT 5")
                 except Exception as err:
                     logger.debug("Failed sample before query: %s", err)
 
@@ -439,8 +437,7 @@ class TransformationService:
                 rows_affected = abs(before_stats.null_count - after_stats.null_count)
 
             # 2. Write new immutable Parquet file atomically
-            max_ver = db.query(func.max(DatasetVersion.version_number)).filter(DatasetVersion.dataset_id == dataset.id).scalar() or 0
-            next_ver_num = max(current_version.version_number + 1, max_ver + 1)
+            next_ver_num = current_version.version_number + 1
             dataset_dir = Path(settings.STORAGE_ROOT) / dataset.id
             dataset_dir.mkdir(parents=True, exist_ok=True)
 
@@ -514,7 +511,7 @@ class TransformationService:
                     "anomaly_freedom": profile_res.quality_score.anomaly_freedom,
                 },
                 issues=profile_res.issues,
-                formula_version=profile_res.quality_score.formula_version,
+                formula_version="v1.0",
             )
             db.add(new_quality_report)
 

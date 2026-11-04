@@ -46,8 +46,8 @@ ROLE_SYNONYMS: Dict[str, List[str]] = {
         "wholesale_cost", "cost_price", "procurement_cost", "landed_cost", "expenditure"
     ],
     "quantity": [
-        "quantity", "qty", "units", "units_sold", "order_qty", "sales_volume",
-        "pieces", "cartons", "packs"
+        "quantity", "qty", "units", "units_sold", "volume", "count", "items",
+        "order_qty", "sales_volume", "pieces", "nos", "packages", "stock"
     ],
     "category": [
         "category", "sub_category", "department", "dept", "product_category", "segment",
@@ -180,10 +180,10 @@ class ColumnRoleInferrer:
                     scores["cost"] += 0.20
                     reasons["revenue"].append(f"large positive magnitude (max: {max_v})")
 
-                # Only score quantity if column name genuinely indicates commercial item/unit counts
-                if "INT" in profile.duckdb_type and any(k in name for k in ["qty", "quantity", "units", "pieces", "cartons", "units_sold", "order_qty"]):
-                    scores["quantity"] += 0.35
-                    reasons["quantity"].append("explicit quantity naming with integer distribution")
+                # If pure integer with high count
+                if "INT" in profile.duckdb_type and zeros >= 0:
+                    scores["quantity"] += 0.20
+                    reasons["quantity"].append("integer count distribution")
 
         elif family == "categorical":
             # Categorical cannot be revenue or cost
@@ -280,9 +280,6 @@ class ColumnRoleInferrer:
             "You are a semantic data architect for BizLens enterprise intelligence. "
             "Given column metadata, map each column to the most accurate role from this taxonomy: "
             f"{', '.join(ROLE_TAXONOMY)}. "
-            "CRITICAL: Only assign 'quantity' to columns that represent physical units/items sold, ordered, or shipped in a commercial transaction. "
-            "Generic non-sales counts or numerical scores/measurements (such as hours studied, practice papers, test scores, age, ratings, percentages, survey counts) "
-            "MUST NOT be assigned 'quantity' - map them to 'text' or leave unassigned. "
             "Output JSON object with a 'classifications' array."
         )
 

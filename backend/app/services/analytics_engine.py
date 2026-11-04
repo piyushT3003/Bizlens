@@ -374,97 +374,63 @@ class AnalyticsEngine:
             breakdown_items: Optional[List[BreakdownItem]] = None
             if group_by_role and filtered_rows > 0:
                 dim_col = None
-                all_cols_desc = []
-                try:
-                    all_cols_desc = con.execute("DESCRIBE dataset").fetchall()
-                except Exception:
-                    pass
-                all_cols = [c[0] for c in all_cols_desc]
-
-                if group_by_role in role_to_col and role_to_col[group_by_role]:
+                if group_by_role in role_to_col:
                     dim_col = role_to_col[group_by_role]
                 else:
-                    for c in all_cols:
-                        if c.lower() == group_by_role.lower():
-                            dim_col = c
-                            break
-
-                # Intelligent fallback dimension discovery across standard categorical roles
-                if not dim_col:
-                    for fallback_role in ["category", "segment", "region", "channel", "product", "brand", "type"]:
-                        if fallback_role in role_to_col and role_to_col[fallback_role]:
-                            dim_col = role_to_col[fallback_role]
-                            break
-
-                # If still not found, search for any discrete string column in the dataset
-                if not dim_col:
-                    for col_meta in all_cols_desc:
-                        c_name, c_type = col_meta[0], str(col_meta[1]).upper()
-                        if "VARCHAR" in c_type or "TEXT" in c_type or "STRING" in c_type:
-                            try:
-                                dist_res = con.execute(f'SELECT COUNT(DISTINCT "{c_name}") FROM dataset WHERE "{c_name}" IS NOT NULL').fetchone()
-                                if dist_res and 2 <= dist_res[0] <= 50:
-                                    dim_col = c_name
-                                    break
-                            except Exception:
-                                continue
+                    try:
+                        all_cols = [c[0] for c in con.execute("DESCRIBE dataset").fetchall()]
+                        for c in all_cols:
+                            if c.lower() == group_by_role.lower():
+                                dim_col = c
+                                break
+                    except Exception:
+                        dim_col = None
 
                 if dim_col:
-                    # Select effective metrics and fallback to count if no metrics defined
-                    effective_selects = list(valid_sql_selects)
-                    effective_defs = list(valid_metric_defs)
-                    if not effective_selects:
-                        effective_selects.append("COUNT(*) AS total_orders")
-                        effective_defs.append(metric_registry.get_metric("total_orders") or MetricDefinition(
-                            id="total_orders", label="Total Transactions", description="Count of rows",
-                            required_roles=[], unit="count", format_str="integer", direction="higher_is_better"
-                        ))
+                    # Default ranking metric: revenue or first valid metric actually selected in query
+                    valid_metric_ids = [m.id for m in valid_metric_defs]
+                    primary_metric = "total_revenue" if "total_revenue" in valid_metric_ids else (valid_metric_ids[0] if valid_metric_ids else None)
 
-                    valid_metric_ids = [m.id for m in effective_defs]
-                    primary_metric = "total_revenue" if "total_revenue" in valid_metric_ids else (valid_metric_ids[0] if valid_metric_ids else "total_orders")
+                if primary_metric and valid_sql_selects:
+                    order_dir = "ASC" if str(order_direction).upper() == "ASC" else "DESC"
+                    limit_clause = f"LIMIT {int(limit)}" if limit and limit > 0 else ""
+                    dim_query = f"""
+                        SELECT 
+                            "{dim_col}"::VARCHAR AS dim_val,
+                            {', '.join(valid_sql_selects)}
+                        FROM dataset 
+                        {where_sql}
+                        GROUP BY "{dim_col}"
+                        ORDER BY {primary_metric} {order_dir}
+                        {limit_clause}
+                    """
+                    dim_rows = con.execute(dim_query).fetchall()
 
-                    if primary_metric and effective_selects:
-                        order_dir = "ASC" if str(order_direction).upper() == "ASC" else "DESC"
-                        limit_clause = f"LIMIT {int(limit)}" if limit and limit > 0 else "LIMIT 20"
-                        dim_query = f"""
-                            SELECT 
-                                "{dim_col}"::VARCHAR AS dim_val,
-                                {', '.join(effective_selects)}
-                            FROM dataset 
-                            {where_sql}
-                            GROUP BY "{dim_col}"
-                            ORDER BY {primary_metric} {order_dir}
-                            {limit_clause}
-                        """
-                        dim_rows = con.execute(dim_query).fetchall()
+                    # Grand total for primary metric for share_pct
+                    grand_total = (
+                        metric_results[primary_metric].value
+                        if (primary_metric in metric_results and metric_results[primary_metric].value)
+                        else 1.0
+                    )
 
-                        # Grand total for primary metric for share_pct
-                        grand_total = (
-                            metric_results[primary_metric].value
-                            if (primary_metric in metric_results and metric_results[primary_metric].value)
-                            else None
-                        )
-                        if grand_total is None or grand_total <= 0:
-                            grand_total = sum(float(r[1]) for r in dim_rows if r[1] is not None) if dim_rows else 1.0
+                    breakdown_items = []
+                    for rank, row in enumerate(dim_rows, start=1):
+                        dim_val = row[0] if row[0] is not None else "Unknown"
+                        row_metrics: Dict[str, float] = {}
+                        for idx, m_def in enumerate(valid_metric_defs, start=1):
+                            row_metrics[m_def.id] = round(float(row[idx]), 2) if row[idx] is not None else 0.0
 
-                        breakdown_items = []
-                        for rank, row in enumerate(dim_rows, start=1):
-                            dim_val = row[0] if row[0] is not None else "Unknown"
-                            row_metrics: Dict[str, float] = {}
-                            for idx, m_def in enumerate(effective_defs, start=1):
-                                row_metrics[m_def.id] = round(float(row[idx]), 2) if row[idx] is not None else 0.0
+                        prim_val = row_metrics.get(primary_metric, 0.0)
+                        share_pct = round((prim_val / grand_total * 100), 2) if grand_total > 0 else 0.0
 
-                            prim_val = row_metrics.get(primary_metric, 0.0)
-                            share_pct = round((prim_val / grand_total * 100), 2) if grand_total > 0 else 0.0
-
-                            breakdown_items.append(
-                                BreakdownItem(
-                                    dimension_value=dim_val,
-                                    metrics=row_metrics,
-                                    share_pct=share_pct,
-                                    rank=rank,
-                                )
+                        breakdown_items.append(
+                            BreakdownItem(
+                                dimension_value=dim_val,
+                                metrics=row_metrics,
+                                share_pct=share_pct,
+                                rank=rank,
                             )
+                        )
 
             elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
 

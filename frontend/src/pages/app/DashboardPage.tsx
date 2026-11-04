@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { ChartFrame } from "@/components/ui/ChartFrame";
@@ -438,8 +437,6 @@ export const DashboardPage: React.FC = () => {
   const {
     metrics,
     breakdown,
-    breakdownDimension,
-    setBreakdownDimension,
     lineage,
     selectedCategory,
     setSelectedCategory,
@@ -452,39 +449,9 @@ export const DashboardPage: React.FC = () => {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [selectedMetricId, setSelectedMetricId] = useState<string>("total_revenue");
   const [explainOpen, setExplainOpen] = useState(false);
-  const [explainPart, setExplainPart] = useState<string>("trajectory");
-
-  // Dynamic discovery of available analytical dimensions across active dataset mappings
-  const availableDimensions = useMemo(() => {
-    const list: Array<{ role: string; label: string }> = [];
-    const seenRoles = new Set<string>();
-
-    const mapping = activeDataset?.active_mapping;
-    if (mapping && typeof mapping === "object") {
-      const candidates = [
-        { role: "category", label: "Category" },
-        { role: "region", label: "Region" },
-        { role: "product", label: "Product" },
-        { role: "customer", label: "Customer" },
-        { role: "segment", label: "Segment" },
-      ];
-      for (const item of Object.values(mapping)) {
-        if (!item || !item.role) continue;
-        const role = item.role.toLowerCase();
-        for (const cand of candidates) {
-          if (role === cand.role && !seenRoles.has(cand.role)) {
-            list.push(cand);
-            seenRoles.add(cand.role);
-          }
-        }
-      }
-    }
-
-    if (list.length === 0) {
-      list.push({ role: "category", label: "Category" });
-    }
-    return list;
-  }, [activeDataset?.active_mapping]);
+  const [explainPart, setExplainPart] = useState<
+    "trajectory" | "category" | "total_revenue" | "total_orders" | "gross_profit" | "gross_margin_pct" | "topography"
+  >("trajectory");
 
   // Phase 10: Forecast Observatory state (dynamically calibrated per active dataset)
   const [observatoryData, setObservatoryData] = useState<ForecastObservatoryData>(() =>
@@ -555,13 +522,13 @@ export const DashboardPage: React.FC = () => {
   // Multi-month Trajectory Engine: fetches authentic DuckDB timeline, never hardcoded to 4 months
   const [trajectoryData, setTrajectoryData] = useState<TrajectoryResponse | null>(null);
   const [isTrajectoryLoading, setIsTrajectoryLoading] = useState(false);
-  const [trajectoryHorizon, setTrajectoryHorizon] = useState<"3m" | "6m" | "12m" | "all">("all");
+  const [trajectoryHorizon, setTrajectoryHorizon] = useState<"3m" | "6m" | "12m">("6m");
 
   useEffect(() => {
     const dsId = activeDataset?.id || safePreset.id;
     setIsTrajectoryLoading(true);
     setTrajectoryData(null);
-    const limit = trajectoryHorizon === "3m" ? 3 : trajectoryHorizon === "6m" ? 6 : trajectoryHorizon === "12m" ? 12 : 60;
+    const limit = trajectoryHorizon === "3m" ? 3 : trajectoryHorizon === "6m" ? 6 : 12;
     api.getTrajectory(dsId, selectedCategory, limit)
       .then((data) => {
         if (data && data.points && data.points.length > 0) {
@@ -594,63 +561,20 @@ export const DashboardPage: React.FC = () => {
     return [];
   }, [trajectoryData, trajectoryHorizon]);
 
-  // Trajectory metric type detection: handles datasets tracking revenue vs order counts
-  const trajectoryMetricType = useMemo(() => {
-    if (metrics?.total_revenue?.is_available || trajectoryData?.unit === "currency") return "currency";
-    return "orders";
-  }, [metrics, trajectoryData]);
-
-  const trajectoryMetricLabel = useMemo(() => {
-    if (trajectoryMetricType === "currency") return "Revenue";
-    return "Orders";
-  }, [trajectoryMetricType]);
-
-  const maxMonthVal = useMemo(() => {
-    if (activePoints.length === 0) return 1;
-    const values = activePoints.map((t) => {
-      if (trajectoryMetricType === "currency") return t.revenue;
-      if (t.revenue > 0) return t.revenue;
-      return t.orders;
-    });
-    return Math.max(...values, 1);
-  }, [activePoints, trajectoryMetricType]);
+  const maxMonthVal = Math.max(...activePoints.map((t) => t.revenue), 1);
 
   const monthlyTrajectory = useMemo(() => {
-    return activePoints.map((item) => {
-      const metricVal =
-        trajectoryMetricType === "currency"
-          ? item.revenue
-          : item.revenue > 0
-          ? item.revenue
-          : item.orders;
-
-      const heightPct = Math.max(16, Math.round((metricVal / maxMonthVal) * 82));
-
-      let formattedVal = item.formatted_revenue;
-      if (!formattedVal) {
-        if (trajectoryMetricType === "currency") {
-          formattedVal = formatCurrencyAmount(item.revenue, activeCurrency, activeGrouping);
-        } else {
-          formattedVal = `${item.orders.toLocaleString()} orders`;
-        }
-      }
-
-      return {
-        m: item.label,
-        month_key: item.month_key,
-        val: metricVal,
-        orders: item.orders,
-        delta:
-          item.delta_pct !== undefined && item.delta_pct !== null
-            ? `${item.delta_pct >= 0 ? "+" : ""}${item.delta_pct.toFixed(1)}%`
-            : "--",
-        projected: item.projected,
-        status: item.status,
-        heightPct,
-        formattedVal,
-      };
-    });
-  }, [activePoints, maxMonthVal, trajectoryMetricType, activeCurrency, activeGrouping]);
+    return activePoints.map((item) => ({
+      m: item.label,
+      val: item.revenue,
+      orders: item.orders,
+      delta: item.delta_pct !== undefined && item.delta_pct !== null ? `${item.delta_pct >= 0 ? "+" : ""}${item.delta_pct.toFixed(1)}%` : "--",
+      projected: item.projected,
+      status: item.status,
+      heightPct: Math.max(16, Math.round((item.revenue / maxMonthVal) * 82)),
+      formattedVal: item.revenue > 0 ? formatCurrencyAmount(item.revenue, activeCurrency, activeGrouping) : `${item.orders.toLocaleString()} orders`,
+    }));
+  }, [activePoints, maxMonthVal, activeCurrency, activeGrouping]);
 
   // Responsive cylinder geometry adapting dynamically to dataset series length
   const numBars = monthlyTrajectory.length;
@@ -708,46 +632,6 @@ export const DashboardPage: React.FC = () => {
     }
   }, [numBars]);
 
-  // Fixed 4 Core Overview KPI Measures (RULES.md & Master Contract)
-  // Strictly preserves: Total Revenue, Total Orders, Gross Profit, Gross Margin %
-  // Evaluates dataset schema and calculations accurately without fake substitutes.
-  const kpiSlots = useMemo(() => {
-    return [
-      {
-        id: "total_revenue",
-        label: "Total Revenue",
-        res: metrics?.total_revenue,
-        calc: "DuckDB SUM(rev)",
-      },
-      {
-        id: "total_orders",
-        label: "Total Orders",
-        res: metrics?.total_orders,
-        calc: "DuckDB COUNT(*)",
-      },
-      {
-        id: "gross_profit",
-        label: "Gross Profit",
-        res: metrics?.gross_profit,
-        calc: "SUM(rev) - SUM(cost)",
-      },
-      {
-        id: "gross_margin_pct",
-        label: "Gross Margin %",
-        res: metrics?.gross_margin_pct,
-        calc: "Profit / Revenue",
-      },
-    ];
-  }, [metrics]);
-
-  // Authentic breakdown metric discovery: Revenue for commercial datasets, Orders for non-commercial datasets
-  const breakdownMetricInfo = useMemo(() => {
-    if (metrics?.total_revenue?.is_available && (metrics.total_revenue.value ?? 0) > 0) {
-      return { key: "total_revenue", label: "Revenue", isCurrency: true };
-    }
-    return { key: "total_orders", label: "Orders", isCurrency: false };
-  }, [metrics]);
-
   const setView = (view: string) => {
     setSearchParams({ view });
   };
@@ -764,35 +648,15 @@ export const DashboardPage: React.FC = () => {
       ? "Total Revenue"
       : selectedMetricId === "total_orders"
       ? "Total Orders"
-      : selectedMetricId === "total_units"
-      ? "Total Units Sold"
-      : selectedMetricId === "avg_order_value"
-      ? "Average Order Value (AOV)"
-      : selectedMetricId === "units_per_order"
-      ? "Units Per Order"
-      : selectedMetricId === "avg_unit_price"
-      ? "Average Selling Price"
-      : selectedMetricId === "avg_discount_pct"
-      ? "Average Discount Rate"
       : selectedMetricId === "gross_profit"
       ? "Gross Profit"
       : selectedMetricId === "gross_margin_pct"
       ? "Gross Margin %"
-      : selectedMetricId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()));
+      : "Total Revenue");
   const formula =
     currentMetric?.formula_sql ||
     (selectedMetricId === "total_orders"
-      ? "COUNT(DISTINCT {id})"
-      : selectedMetricId === "total_units"
-      ? "SUM({quantity})"
-      : selectedMetricId === "avg_order_value"
-      ? "SUM({revenue}) / COUNT(DISTINCT {id})"
-      : selectedMetricId === "units_per_order"
-      ? "SUM({quantity}) / COUNT(DISTINCT {id})"
-      : selectedMetricId === "avg_unit_price"
-      ? "SUM({revenue}) / SUM({quantity})"
-      : selectedMetricId === "avg_discount_pct"
-      ? "AVG({discount}) * 100"
+      ? "COUNT({id})"
       : selectedMetricId === "gross_profit"
       ? "SUM({revenue}) - SUM({cost})"
       : selectedMetricId === "gross_margin_pct"
@@ -844,10 +708,10 @@ export const DashboardPage: React.FC = () => {
     if (explainPart === "trajectory") {
       if (activePoints.length === 0) {
         return {
-          partTitle: `${trajectoryMetricLabel} Trajectory & Growth Dynamics`,
+          partTitle: "Revenue Trajectory & Growth Dynamics",
           datasetName: activeDataset?.name || safePreset.name,
           scopeBadge: "No Chronological Date Column",
-          executiveSummary: `No chronological timeline is available for ${activeDataset?.name || safePreset.name} as it does not contain an identified date or timestamp column. Trajectory analysis requires temporal series data.`,
+          executiveSummary: `No chronological timeline is available for ${activeDataset?.name || safePreset.name} as it does not contain an identified date or timestamp column. Monthly trajectory requires temporal series data.`,
           facts: [
             { label: "Timeline Status", value: "Unavailable", sublabel: "No date column mapped", highlight: true },
             { label: "Scanned Records", value: `${lineage?.rows_after_filters?.toLocaleString() || "0"} rows`, sublabel: "Total dataset rows" },
@@ -859,55 +723,49 @@ export const DashboardPage: React.FC = () => {
         };
       }
 
-      const totalHorizonVal = monthlyTrajectory.reduce((acc, p) => acc + (p.val || 0), 0);
-      const formattedTotalVal =
-        trajectoryMetricType === "currency"
-          ? formatCurrencyAmount(totalHorizonVal, activeCurrency, activeGrouping)
-          : `${totalHorizonVal.toLocaleString()} orders`;
-      const avgMonthlyVal = Math.round(totalHorizonVal / Math.max(monthlyTrajectory.length, 1));
-      const formattedAvgVal =
-        trajectoryMetricType === "currency"
-          ? formatCurrencyAmount(avgMonthlyVal, activeCurrency, activeGrouping)
-          : `${avgMonthlyVal.toLocaleString()} orders/mo`;
-      const peakPoint = monthlyTrajectory.reduce((max, p) => (p.val > (max?.val || 0) ? p : max), monthlyTrajectory[0]);
-      const historicalCount = monthlyTrajectory.filter((p) => !p.projected).length;
-      const projectedCount = monthlyTrajectory.filter((p) => p.projected).length;
-      const firstPoint = monthlyTrajectory[0];
-      const lastPoint = monthlyTrajectory[monthlyTrajectory.length - 1];
+      const totalHorizonRev = activePoints.reduce((acc, p) => acc + (p.revenue || 0), 0);
+      const formattedTotalRev = formatCurrencyAmount(totalHorizonRev, activeCurrency, activeGrouping);
+      const avgMonthlyRev = Math.round(totalHorizonRev / Math.max(activePoints.length, 1));
+      const formattedAvgRev = formatCurrencyAmount(avgMonthlyRev, activeCurrency, activeGrouping);
+      const peakPoint = activePoints.reduce((max, p) => (p.revenue > (max?.revenue || 0) ? p : max), activePoints[0]);
+      const historicalCount = activePoints.filter((p) => !p.projected).length;
+      const projectedCount = activePoints.filter((p) => p.projected).length;
+      const firstPoint = activePoints[0];
+      const lastPoint = activePoints[activePoints.length - 1];
       const overallGrowthPct =
-        firstPoint && firstPoint.val > 0
-          ? (((lastPoint.val - firstPoint.val) / firstPoint.val) * 100).toFixed(1)
+        firstPoint && firstPoint.revenue > 0
+          ? (((lastPoint.revenue - firstPoint.revenue) / firstPoint.revenue) * 100).toFixed(1)
           : "0.0";
-      const totalOrdersHorizon = monthlyTrajectory.reduce((acc, p) => acc + (p.orders || 0), 0);
+      const totalOrdersHorizon = activePoints.reduce((acc, p) => acc + (p.orders || 0), 0);
 
       return {
-        partTitle: `${trajectoryMetricLabel} Trajectory & Growth Dynamics`,
+        partTitle: "Revenue Trajectory & Growth Dynamics",
         datasetName: activeDataset?.name || safePreset.name,
-        scopeBadge: `${monthlyTrajectory.length}-Month Timeline Sequence`,
-        executiveSummary: `${trajectoryMetricLabel} velocity across the active ${monthlyTrajectory.length}-month window reflects consolidated performance of ${formattedTotalVal}, averaging ${formattedAvgVal} per period. Performance peaked in ${peakPoint?.m || "peak period"} at ${peakPoint?.formattedVal || "--"}${projectedCount > 0 ? `, incorporating ${projectedCount} forecasted cycles calibrated at 95% confidence intervals.` : " under 100% verified historical DuckDB scans."}`,
+        scopeBadge: `${activePoints.length}-Month Timeline Sequence`,
+        executiveSummary: `Revenue velocity across the active ${activePoints.length}-month window reflects consolidated turnover of ${formattedTotalRev}, averaging ${formattedAvgRev} per period. Performance peaked in ${peakPoint?.label || "peak period"} at ${peakPoint ? formatCurrencyAmount(peakPoint.revenue, activeCurrency, activeGrouping) : "--"}${projectedCount > 0 ? `, incorporating ${projectedCount} forecasted cycles calibrated at 95% confidence intervals.` : " under 100% verified historical DuckDB scans."}`,
         facts: [
           {
-            label: `Horizon ${trajectoryMetricLabel}`,
-            value: formattedTotalVal,
-            sublabel: `${monthlyTrajectory.length} aggregate periods`,
+            label: "Horizon Net Revenue",
+            value: formattedTotalRev,
+            sublabel: `${activePoints.length} aggregate periods`,
             highlight: true,
           },
           {
             label: "Average Monthly Velocity",
-            value: formattedAvgVal,
+            value: formattedAvgRev,
             sublabel: "Normalized run-rate",
           },
           {
             label: "Peak Performance Period",
-            value: peakPoint?.m || "--",
-            sublabel: peakPoint?.formattedVal || "--",
+            value: peakPoint?.label || "--",
+            sublabel: peakPoint ? formatCurrencyAmount(peakPoint.revenue, activeCurrency, activeGrouping) : "--",
             badge: "Peak",
             highlight: true,
           },
           {
             label: "Net Trajectory Momentum",
             value: `${Number(overallGrowthPct) >= 0 ? "+" : ""}${overallGrowthPct}%`,
-            sublabel: `${firstPoint?.m || ""} to ${lastPoint?.m || ""}`,
+            sublabel: `${firstPoint?.label || ""} to ${lastPoint?.label || ""}`,
           },
           {
             label: "Temporal Data Provenance",
@@ -920,10 +778,10 @@ export const DashboardPage: React.FC = () => {
             sublabel: "Horizon transactions",
           },
         ],
-        interpretation: `Columnar aggregation across ${activeDataset?.name || safePreset.name} demonstrates a ${Number(overallGrowthPct) >= 0 ? "healthy upward expansion" : "contracting run-rate"} across the evaluated ${monthlyTrajectory.length}-month span. Highest monthly density occurred during ${peakPoint?.m || "peak month"}, driven by steady volume. ${projectedCount > 0 ? "Forecasted intervals project forward demand incorporating baseline seasonality factors." : "All data points represent deterministic historical records verified against in-memory Parquet columns."}`,
+        interpretation: `Columnar aggregation across ${activeDataset?.name || safePreset.name} demonstrates a ${Number(overallGrowthPct) >= 0 ? "healthy upward expansion" : "contracting run-rate"} across the evaluated ${activePoints.length}-month span. Highest monthly revenue density occurred during ${peakPoint?.label || "peak month"}, driven by steady order volume. ${projectedCount > 0 ? "Forecasted intervals project forward demand incorporating baseline seasonality factors." : "All data points represent deterministic historical records verified against in-memory Parquet columns."}`,
         recommendations: [
-          `Align inventory allocation and warehouse fulfillment ahead of peak demand patterns observed in ${peakPoint?.m || "peak period"}.`,
-          `Leverage the steady monthly baseline (${formattedAvgVal}) to optimize forward vendor contract pricing and working capital.`,
+          `Align inventory allocation and warehouse fulfillment ahead of peak demand patterns observed in ${peakPoint?.label || "peak period"}.`,
+          `Leverage the steady monthly baseline (${formattedAvgRev}/mo) to optimize forward vendor contract pricing and working capital.`,
           `Monitor period-over-period variations closely to preserve margin integrity against unexpected cost swings.`,
         ],
       };
@@ -950,10 +808,7 @@ export const DashboardPage: React.FC = () => {
       const topCat = breakdown[0];
       const topCatName = topCat.dimension_value || "Core";
       const topCatShare = topCat.share_pct || 0;
-      const topCatVal = topCat.metrics?.[breakdownMetricInfo.key] ?? topCat.metrics?.total_revenue ?? topCat.metrics?.total_orders ?? 0;
-      const topCatValFormatted = breakdownMetricInfo.isCurrency
-        ? formatCurrencyAmount(topCatVal, activeCurrency, activeGrouping)
-        : `${Math.round(topCatVal).toLocaleString()} orders`;
+      const topCatRev = topCat.metrics?.total_revenue || 0;
 
       const secondCat = breakdown.length > 1 ? breakdown[1] : null;
       const secondCatName = secondCat?.dimension_value || "Secondary";
@@ -967,13 +822,8 @@ export const DashboardPage: React.FC = () => {
       const selectedCatItem = selectedCategory
         ? breakdown.find((b) => b.dimension_value === selectedCategory)
         : null;
-      const selectedCatVal = selectedCatItem
-        ? selectedCatItem.metrics?.[breakdownMetricInfo.key] ?? selectedCatItem.metrics?.total_revenue ?? selectedCatItem.metrics?.total_orders ?? 0
-        : 0;
-      const selectedCatFormatted = selectedCatItem
-        ? breakdownMetricInfo.isCurrency
-          ? formatCurrencyAmount(selectedCatVal, activeCurrency, activeGrouping)
-          : `${Math.round(selectedCatVal).toLocaleString()} orders`
+      const selectedCatRevFormatted = selectedCatItem?.metrics?.total_revenue
+        ? formatCurrencyAmount(selectedCatItem.metrics.total_revenue, activeCurrency, activeGrouping)
         : "--";
 
       return {
@@ -981,8 +831,8 @@ export const DashboardPage: React.FC = () => {
         datasetName: activeDataset?.name || safePreset.name,
         scopeBadge: selectedCategory ? `Filtered Segment: ${selectedCategory}` : `${catCount} Portfolio Segments`,
         executiveSummary: selectedCategory
-          ? `Filtered segment '${selectedCategory}' generates ${selectedCatItem?.share_pct ? `${selectedCatItem.share_pct.toFixed(1)}%` : "--"} of consolidated enterprise ${breakdownMetricInfo.label.toLowerCase()} (${selectedCatFormatted}), ranking #${selectedCatItem?.rank || 1} in overall portfolio.`
-          : `Portfolio turnover across ${activeDataset?.name || safePreset.name} is distributed across ${catCount} categories, anchored by '${topCatName}' (${topCatShare.toFixed(1)}% ${breakdownMetricInfo.label.toLowerCase()} share). The top two categories generate ${top2Share}% of consolidated volume.`,
+          ? `Filtered segment '${selectedCategory}' generates ${selectedCatItem?.share_pct ? `${selectedCatItem.share_pct.toFixed(1)}%` : "--"} of consolidated enterprise revenue (${selectedCatRevFormatted}), ranking #${selectedCatItem?.rank || 1} in overall portfolio volume.`
+          : `Portfolio turnover across ${activeDataset?.name || safePreset.name} is distributed across ${catCount} categories, anchored by '${topCatName}' (${topCatShare.toFixed(1)}% revenue share). The top two categories generate ${top2Share}% of consolidated sales volume.`,
         facts: [
           {
             label: "Dominant Portfolio Pillar",
@@ -991,9 +841,9 @@ export const DashboardPage: React.FC = () => {
             highlight: true,
           },
           {
-            label: `Dominant ${breakdownMetricInfo.label}`,
-            value: topCatValFormatted,
-            sublabel: `Direct ${breakdownMetricInfo.label.toLowerCase()} contribution`,
+            label: "Dominant Category Volume",
+            value: formatCurrencyAmount(topCatRev, activeCurrency, activeGrouping),
+            sublabel: "Direct revenue contribution",
           },
           {
             label: "Top 2 Concentration",
@@ -1319,7 +1169,7 @@ export const DashboardPage: React.FC = () => {
           `Correlate localized regional demand density with category inventory allocations to accelerate fulfillment speeds.`,
         ],
       };
-    } else if (explainPart === "gross_margin_pct") {
+    } else {
       // explainPart === "gross_margin_pct"
       const isMarginAvail = metrics?.gross_margin_pct?.is_available !== false && typeof metrics?.gross_margin_pct?.value === "number";
       if (!isMarginAvail) {
@@ -1398,85 +1248,6 @@ export const DashboardPage: React.FC = () => {
           `Prioritize digital marketing and sales compensation toward lines producing greater than ${marginValFormatted} margin.`,
           `Establish algorithmic pricing thresholds to prevent unapproved field discounting on top-selling inventory.`,
           `Track reverse logistics, return rates, and restocking overhead to prevent gross margin leakage after checkout.`,
-        ],
-      };
-    } else if (explainPart === "quality_score") {
-      const qVal = (activeDataset?.quality_score ?? safePreset?.quality_score ?? 95.0).toFixed(1);
-      return {
-        partTitle: "Data Quality Health & Lineage Audit",
-        datasetName: activeDataset?.name || safePreset.name,
-        scopeBadge: "Quality Engine Audit",
-        executiveSummary: `Automated data health audit measured an overall data quality rating of ${qVal}% across ${activeDataset?.name || safePreset.name}. Analyzed for null distributions, semantic integrity, uniqueness constraints, and timestamp conformity.`,
-        facts: [
-          { label: "Data Quality Score", value: `${qVal}%`, sublabel: "Holistic health index", highlight: true },
-          { label: "Verification Status", value: "Verified", sublabel: "DuckDB Engine" },
-          { label: "Scanned Records", value: `${(lineage?.total_rows_scanned ?? activeDataset?.row_count ?? safePreset.row_count)?.toLocaleString()} rows`, sublabel: "Audit ledger" },
-          { label: "Engine Type", value: "Audit Quality Engine", sublabel: "Automated telemetry" },
-        ],
-        interpretation: `A health score of ${qVal}% ensures reliable enterprise analytics, confirming that the records in this dataset meet deterministic reporting standards with low noise.`,
-        recommendations: [
-          `Review Data Management panel to resolve any detected anomalies or null distributions.`,
-          `Run Copilot Data Hygiene routines prior to enterprise export.`,
-        ],
-      };
-    } else if (explainPart === "total_records") {
-      const rows = (lineage?.total_rows_scanned ?? activeDataset?.row_count ?? safePreset?.row_count ?? 0).toLocaleString();
-      return {
-        partTitle: "Dataset Population & Record Ledger",
-        datasetName: activeDataset?.name || safePreset.name,
-        scopeBadge: "Ledger Introspection",
-        executiveSummary: `Discovered and verified ${rows} total records within ${activeDataset?.name || safePreset.name}. Each row represents an atomic entry in the analytical pipeline.`,
-        facts: [
-          { label: "Total Population", value: `${rows} rows`, sublabel: "Ingested records", highlight: true },
-          { label: "Storage Engine", value: "DuckDB In-Memory OLAP", sublabel: "Columnar format" },
-          { label: "Latency", value: `${lineage?.execution_time_ms ? `${lineage.execution_time_ms}ms` : "<25ms"}`, sublabel: "Scan duration" },
-        ],
-        interpretation: `Record counts are maintained through columnar scans in DuckDB, ensuring complete transactional coverage across all analytics queries.`,
-        recommendations: [
-          `Filter by date ranges or categorical segments to inspect focused sub-populations.`,
-        ],
-      };
-    } else if (explainPart === "total_dimensions") {
-      const cols = activeDataset?.col_count ?? safePreset?.col_count ?? 1;
-      return {
-        partTitle: "Analyzed Dimensions & Schema Features",
-        datasetName: activeDataset?.name || safePreset.name,
-        scopeBadge: "Schema Introspection",
-        executiveSummary: `Discovered ${cols} schema dimensions and feature attributes within ${activeDataset?.name || safePreset.name}.`,
-        facts: [
-          { label: "Total Features", value: `${cols} columns`, sublabel: "Introspected schema", highlight: true },
-          { label: "Semantic Roles", value: "Categorical, Metric, Temporal", sublabel: "DuckDB catalog" },
-        ],
-        interpretation: `Multi-dimensional schema introspection enables cross-segmentation and granular breakdown across all categorical features.`,
-        recommendations: [
-          `Explore Category and Segment breakdowns to analyze attribute distribution across dimensions.`,
-        ],
-      };
-    } else {
-      // Dynamic metric fallback (e.g. total_units, avg_order_value, units_per_order, avg_unit_price, etc.)
-      const m = metrics?.[explainPart];
-      const mTitle = m?.label || explainPart.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-      const mVal = m?.formatted_value || "--";
-      const isAvail = m?.is_available !== false && mVal !== "--";
-      return {
-        partTitle: `${mTitle} Intelligence & Lineage`,
-        datasetName: activeDataset?.name || safePreset.name,
-        scopeBadge: isAvail ? "Deterministic DuckDB" : "Metric Unavailable",
-        executiveSummary: isAvail
-          ? `Discovered and verified ${mTitle} of ${mVal} across ${lineage?.rows_after_filters?.toLocaleString() || "all"} scanned records in ${activeDataset?.name || safePreset.name}. Calculated via ${m?.formula_sql || "columnar aggregation"}.`
-          : `${mTitle} is unavailable for ${activeDataset?.name || safePreset.name} (${m?.unavailable_reason || "required columns missing"}).`,
-        facts: [
-          { label: mTitle, value: mVal, sublabel: m?.unit || "Metric value", highlight: true },
-          { label: "Formula SQL", value: m?.formula_sql || "SUM/COUNT", sublabel: "Columnar rule" },
-          { label: "Scanned Records", value: `${lineage?.rows_after_filters?.toLocaleString() || "0"} rows`, sublabel: "Total records" },
-          { label: "Lineage Engine", value: "DuckDB In-Memory", sublabel: "Deterministic" },
-        ],
-        interpretation: isAvail
-          ? `${mTitle} reflects verified columnar performance calculated under 100% deterministic SQL lineage directly on the loaded dataset.`
-          : `The dataset schema does not have the necessary attributes to compute ${mTitle}.`,
-        recommendations: [
-          `Use this verified metric to guide operational forecasting and strategic decision-making.`,
-          `Explore related segment breakdowns to identify sub-group variance.`,
         ],
       };
     }
@@ -1636,132 +1407,127 @@ export const DashboardPage: React.FC = () => {
       {/* VIEW 1: OVERVIEW */}
       {currentView === "overview" && (
         <div className="space-y-6">
-          {/* Executive Dataset Intelligence Capsule: Dynamic Study & Model Telemetry */}
-          <div className="p-4 rounded-2xl border border-surface-border bg-gradient-to-r from-surface-card/90 via-surface-elevated/70 to-surface-card/90 backdrop-blur-md shadow-sm space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-border/60 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-brand-orange/15 border border-brand-orange/30 flex items-center justify-center shrink-0 shadow-glowSm">
-                  <Database className="w-4 h-4 text-brand-orange" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-text-main">
-                      {activeDataset?.name || safePreset.name}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-brand-orange/10 text-brand-orange border border-brand-orange/20">
-                      <ShieldCheck className="w-3 h-3" />
-                      DuckDB OLAP Verified
-                    </span>
-                  </div>
-                  <p className="text-xs text-text-muted mt-0.5">
-                    Deterministic Analytical Pipeline • 0 Synthetic Projections in Ledger
-                  </p>
-                </div>
-              </div>
-
-              {/* Live Dataset Telemetry Badges */}
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle border border-surface-border font-mono text-[11px]">
-                  <Layers className="w-3.5 h-3.5 text-text-muted" />
-                  <span className="text-text-muted">Rows:</span>
-                  <strong className="text-text-main font-semibold">
-                    {(lineage?.total_rows_scanned ?? activeDataset?.row_count ?? safePreset.row_count)?.toLocaleString()}
-                  </strong>
-                </div>
-
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle border border-surface-border font-mono text-[11px]">
-                  <Activity className="w-3.5 h-3.5 text-status-positive" />
-                  <span className="text-text-muted">Health:</span>
-                  <strong className="text-status-positive font-semibold">
-                    {(activeDataset?.quality_score ?? safePreset.quality_score)?.toFixed(1)}%
-                  </strong>
-                </div>
-
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle border border-surface-border font-mono text-[11px]">
-                  <Zap className="w-3.5 h-3.5 text-brand-amber" />
-                  <span className="text-text-muted">Latency:</span>
-                  <strong className="text-text-main font-semibold">
-                    {lineage?.execution_time_ms ? `${lineage.execution_time_ms}ms` : "<25ms"}
-                  </strong>
-                </div>
-
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle border border-surface-border font-mono text-[11px]">
-                  <Calendar className="w-3.5 h-3.5 text-text-muted" />
-                  <span className="text-text-muted">Timeline:</span>
-                  <strong className="text-text-main font-semibold">
-                    {numBars > 0 ? `${numBars} Months Series` : "Continuous Ledger"}
-                  </strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Automated Dataset Insight Summary */}
-            <div className="flex items-center gap-2.5 text-xs text-text-muted bg-surface-subtle/60 px-3.5 py-2 rounded-xl border border-surface-border/50">
-              <Sparkles className="w-4 h-4 text-brand-orange shrink-0" />
-              <div className="text-xs leading-relaxed">
-                <strong className="text-text-main font-semibold mr-1">Executive Assessment:</strong>
-                {metrics?.total_revenue?.is_available && (metrics.total_revenue.value ?? 0) > 0 ? (
-                  <>
-                    Discovered active commercial ledger generating <strong className="text-text-main">{metrics.total_revenue.formatted_value}</strong> across <strong className="text-text-main">{metrics.total_orders?.formatted_value ?? "all"}</strong> transactions
-                    {breakdown && breakdown.length > 0 ? ` segmented across ${breakdown.length} verified categories/channels.` : "."}
-                  </>
-                ) : metrics?.total_units?.is_available && (metrics.total_units.value ?? 0) > 0 ? (
-                  <>
-                    Discovered high-velocity volume operations tracking <strong className="text-text-main">{metrics.total_units.formatted_value} units</strong> across <strong className="text-text-main">{metrics.total_orders?.formatted_value ?? "all"}</strong> orders
-                    {breakdown && breakdown.length > 0 ? ` distributed across ${breakdown.length} operational segments.` : "."}
-                  </>
-                ) : (
-                  <>
-                    Discovered transaction and event log with <strong className="text-text-main">{metrics?.total_orders?.formatted_value ?? "verified"}</strong> records. Full analytical lineage maintained.
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Adaptive Real KPI Cards Grid from DuckDB Engine */}
+          {/* Real KPI Cards Grid from DuckDB Engine */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-            {kpiSlots.map((kpi, idx) => (
-              <KpiCard
-                key={kpi.id}
-                metricId={kpi.id}
-                label={kpi.label}
-                value={kpi.res?.is_available === false ? "--" : (kpi.res?.formatted_value ?? "--")}
-                deltaText={
-                  kpi.res?.is_available === false
-                    ? "--"
-                    : kpi.res?.delta_pct !== undefined && kpi.res?.delta_pct !== null
-                    ? `${kpi.res.delta_pct >= 0 ? "+" : ""}${kpi.res.delta_pct.toFixed(1)}% ${selectedPeriod === "all" ? "MoM" : "PoP"}`
-                    : "Full Scope"
-                }
-                status={kpi.res?.is_available === false ? "neutral" : (kpi.res?.status ?? "neutral")}
-                changeLabel={
-                  kpi.res?.is_available === false
-                    ? (kpi.res?.unavailable_reason || "Not in dataset")
-                    : kpi.res?.comparison_label || (selectedPeriod === "all" ? "vs. prior completed month" : "vs. previous period")
-                }
-                loading={isLoading}
-                calculationSource={kpi.res?.is_available === false ? "Not in dataset" : kpi.calc}
-                stagger={((idx % 4) + 1) as 1 | 2 | 3 | 4}
-                onClick={() => handleKpiClick(kpi.id)}
-                onViewEvidence={() => handleKpiClick(kpi.id)}
-                onExplain={() => {
-                  setExplainPart(kpi.id);
-                  setExplainOpen(true);
-                }}
-              />
-            ))}
+            <KpiCard
+              metricId="total_revenue"
+              label="Total Revenue"
+              value={metrics?.total_revenue?.is_available === false ? "--" : (metrics?.total_revenue?.formatted_value ?? "--")}
+              deltaText={
+                metrics?.total_revenue?.is_available === false
+                  ? "--"
+                  : metrics?.total_revenue?.delta_pct !== undefined && metrics.total_revenue.delta_pct !== null
+                  ? `${metrics.total_revenue.delta_pct >= 0 ? "+" : ""}${metrics.total_revenue.delta_pct.toFixed(1)}% ${selectedPeriod === "all" ? "MoM" : "PoP"}`
+                  : "Full Scope"
+              }
+              status={metrics?.total_revenue?.is_available === false ? "neutral" : (metrics?.total_revenue?.status ?? "neutral")}
+              changeLabel={
+                metrics?.total_revenue?.is_available === false
+                  ? "Not in dataset"
+                  : metrics?.total_revenue?.comparison_label || (selectedPeriod === "all" ? "vs. prior completed month" : "vs. previous period")
+              }
+              loading={isLoading}
+              calculationSource={metrics?.total_revenue?.is_available === false ? "Not in dataset" : "DuckDB SUM"}
+              stagger={1}
+              onClick={() => handleKpiClick("total_revenue")}
+              onViewEvidence={() => handleKpiClick("total_revenue")}
+              onExplain={() => {
+                setExplainPart("total_revenue");
+                setExplainOpen(true);
+              }}
+            />
+            <KpiCard
+              metricId="total_orders"
+              label="Total Orders"
+              value={metrics?.total_orders?.is_available === false ? "--" : (metrics?.total_orders?.formatted_value ?? "--")}
+              deltaText={
+                metrics?.total_orders?.is_available === false
+                  ? "--"
+                  : metrics?.total_orders?.delta_pct !== undefined && metrics.total_orders.delta_pct !== null
+                  ? `${metrics.total_orders.delta_pct >= 0 ? "+" : ""}${metrics.total_orders.delta_pct.toFixed(1)}% ${selectedPeriod === "all" ? "MoM" : "PoP"}`
+                  : "Full Scope"
+              }
+              status={metrics?.total_orders?.is_available === false ? "neutral" : (metrics?.total_orders?.status ?? "neutral")}
+              changeLabel={
+                metrics?.total_orders?.is_available === false
+                  ? "Not in dataset"
+                  : metrics?.total_orders?.comparison_label || (selectedPeriod === "all" ? "vs. prior completed month" : "vs. previous period")
+              }
+              loading={isLoading}
+              calculationSource={metrics?.total_orders?.is_available === false ? "Not in dataset" : "DuckDB COUNT"}
+              stagger={2}
+              onClick={() => handleKpiClick("total_orders")}
+              onViewEvidence={() => handleKpiClick("total_orders")}
+              onExplain={() => {
+                setExplainPart("total_orders");
+                setExplainOpen(true);
+              }}
+            />
+            <KpiCard
+              metricId="gross_profit"
+              label="Gross Profit"
+              value={metrics?.gross_profit?.is_available === false ? "--" : (metrics?.gross_profit?.formatted_value ?? "--")}
+              deltaText={
+                metrics?.gross_profit?.is_available === false
+                  ? "--"
+                  : metrics?.gross_profit?.delta_pct !== undefined && metrics.gross_profit.delta_pct !== null
+                  ? `${metrics.gross_profit.delta_pct >= 0 ? "+" : ""}${metrics.gross_profit.delta_pct.toFixed(1)}% ${selectedPeriod === "all" ? "MoM" : "PoP"}`
+                  : "Full Scope"
+              }
+              status={metrics?.gross_profit?.is_available === false ? "neutral" : (metrics?.gross_profit?.status ?? "neutral")}
+              changeLabel={
+                metrics?.gross_profit?.is_available === false
+                  ? "Not in dataset"
+                  : metrics?.gross_profit?.comparison_label || (selectedPeriod === "all" ? "vs. prior completed month" : "vs. previous period")
+              }
+              loading={isLoading}
+              calculationSource={metrics?.gross_profit?.is_available === false ? "Not in dataset" : "SUM(rev) - SUM(cost)"}
+              stagger={3}
+              onClick={() => handleKpiClick("gross_profit")}
+              onViewEvidence={() => handleKpiClick("gross_profit")}
+              onExplain={() => {
+                setExplainPart("gross_profit");
+                setExplainOpen(true);
+              }}
+            />
+            <KpiCard
+              metricId="gross_margin_pct"
+              label="Gross Margin %"
+              value={metrics?.gross_margin_pct?.is_available === false ? "--" : (metrics?.gross_margin_pct?.formatted_value ?? "--")}
+              deltaText={
+                metrics?.gross_margin_pct?.is_available === false
+                  ? "--"
+                  : metrics?.gross_margin_pct?.delta_pct !== undefined && metrics.gross_margin_pct.delta_pct !== null
+                  ? `${metrics.gross_margin_pct.delta_pct >= 0 ? "+" : ""}${metrics.gross_margin_pct.delta_pct.toFixed(1)}% pts`
+                  : "Full Scope"
+              }
+              status={metrics?.gross_margin_pct?.is_available === false ? "neutral" : (metrics?.gross_margin_pct?.status ?? "neutral")}
+              changeLabel={
+                metrics?.gross_margin_pct?.is_available === false
+                  ? "Not in dataset"
+                  : metrics?.gross_margin_pct?.comparison_label || (selectedPeriod === "all" ? "vs. prior completed month" : "vs. previous period")
+              }
+              loading={isLoading}
+              calculationSource={metrics?.gross_margin_pct?.is_available === false ? "Not in dataset" : "Profit / Revenue"}
+              stagger={4}
+              onClick={() => handleKpiClick("gross_margin_pct")}
+              onViewEvidence={() => handleKpiClick("gross_margin_pct")}
+              onExplain={() => {
+                setExplainPart("gross_margin_pct");
+                setExplainOpen(true);
+              }}
+            />
           </div>
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <ChartFrame
-              title={`${trajectoryMetricLabel} Trajectory (Monthly)`}
-              subtitle={`Verified Performance Trajectory (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to filter dashboard by period`}
+              title="Revenue Trajectory (Monthly)"
+              subtitle={`Verified Performance Trajectory (${activeDataset?.name || safePreset.name} • ${numBars} Months) • Click any 3D bar to inspect period`}
               className="lg:col-span-2 flex flex-col justify-between"
               headerAction={
                 <div className="relative z-30 flex items-center gap-1 bg-surface-elevated/95 p-1 rounded-xl border border-surface-border shadow-sm">
-                  {(["3m", "6m", "12m", "all"] as const).map((h) => (
+                  {(["3m", "6m", "12m"] as const).map((h) => (
                     <button
                       key={h}
                       type="button"
@@ -1776,7 +1542,7 @@ export const DashboardPage: React.FC = () => {
                           : "text-text-muted hover:text-text-main hover:bg-surface-subtle"
                       )}
                     >
-                      {h === "all" ? "All" : h.toUpperCase()}
+                      {h === "3m" ? "3M" : h === "6m" ? "6M" : "12M"}
                     </button>
                   ))}
                 </div>
@@ -1786,7 +1552,7 @@ export const DashboardPage: React.FC = () => {
                 setExplainOpen(true);
               }}
               onViewEvidence={() => {
-                setSelectedMetricId(trajectoryMetricType === "currency" ? "total_revenue" : "total_orders");
+                setSelectedMetricId("total_revenue");
                 setEvidenceOpen(true);
               }}
               loading={isLoading || isTrajectoryLoading}
@@ -1805,22 +1571,11 @@ export const DashboardPage: React.FC = () => {
                   <div className="flex items-stretch h-[270px]">
                   {/* Left Dedicated Y-Axis Column (Cleanly outside the 3D bars) */}
                   <div className="w-14 sm:w-16 flex flex-col justify-between pb-8 pr-2 select-none shrink-0 pointer-events-none">
-                    {[1, 0.75, 0.5, 0.25, 0].map((ratio) => {
-                      const currentVal = maxMonthVal * ratio;
-                      const labelText =
-                        trajectoryMetricType === "currency"
-                          ? formatCurrency(currentVal, sym, activeGrouping)
-                          : currentVal >= 1_000_000
-                          ? `${(currentVal / 1_000_000).toFixed(1)}M`
-                          : currentVal >= 1_000
-                          ? `${(currentVal / 1_000).toFixed(1)}k`
-                          : Math.round(currentVal).toString();
-                      return (
-                        <span key={ratio} className="text-[10px] font-mono text-text-muted text-right truncate">
-                          {labelText}
-                        </span>
-                      );
-                    })}
+                    {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
+                      <span key={ratio} className="text-[10px] font-mono text-text-muted text-right truncate">
+                        {formatCurrency(maxMonthVal * ratio, sym, activeGrouping)}
+                      </span>
+                    ))}
                   </div>
 
                   {/* Right 3D Bar Stage */}
@@ -1835,22 +1590,12 @@ export const DashboardPage: React.FC = () => {
                     {/* Columns Flex Container (Responsive geometry based on series length) */}
                     <div className={cn("flex items-end justify-around w-full h-[235px] relative z-10 px-1 sm:px-2", cylinderStyle.gapClass)}>
                       {monthlyTrajectory.map((item, idx) => {
-                        const isSelected = selectedTrajectoryMonth === item.m || (selectedPeriod && selectedPeriod !== "all" && (selectedPeriod === item.month_key || selectedPeriod === item.m));
+                        const isSelected = selectedTrajectoryMonth === item.m;
 
                         return (
                           <div
                             key={idx}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedTrajectoryMonth(null);
-                                setSelectedPeriod("all");
-                              } else {
-                                setSelectedTrajectoryMonth(item.m);
-                                if (item.month_key) {
-                                  setSelectedPeriod(item.month_key);
-                                }
-                              }
-                            }}
+                            onClick={() => setSelectedTrajectoryMonth(isSelected ? null : item.m)}
                             className={cn(
                               "flex-1 h-full flex flex-col items-center justify-end group cursor-pointer relative z-10 transition-transform duration-300",
                               cylinderStyle.barMaxWidth
@@ -1967,18 +1712,13 @@ export const DashboardPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-status-positive animate-pulse" />
                     <span className="text-text-muted font-medium">
-                      {selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
+                      {selectedTrajectoryMonth ? (
                         <>
-                          Inspecting snapshot: <strong className="text-text-main">{selectedTrajectoryMonth || selectedPeriod}</strong>
+                          Inspecting snapshot: <strong className="text-text-main">{selectedTrajectoryMonth}</strong>
                         </>
                       ) : numBars > 0 ? (
                         <>
-                          Verified Trajectory ({numBars}M): <strong className="text-text-main">
-                            {trajectoryMetricType === "currency"
-                              ? `${formatCurrency(monthlyTrajectory.reduce((acc, p) => acc + p.val, 0), sym, activeGrouping)} Net Revenue`
-                              : `${monthlyTrajectory.reduce((acc, p) => acc + p.orders, 0).toLocaleString()} Total Orders`
-                            }
-                          </strong>
+                          Verified Trajectory ({numBars}M): <strong className="text-text-main">{formatCurrency(monthlyTrajectory.reduce((acc, p) => acc + p.val, 0), sym, activeGrouping)} Net Revenue</strong>
                         </>
                       ) : (
                         <span>No chronological timeline available • Lineage Verified</span>
@@ -1987,16 +1727,23 @@ export const DashboardPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {selectedTrajectoryMonth || (selectedPeriod && selectedPeriod !== "all") ? (
+                    {selectedTrajectoryMonth ? (
                       <>
+                        {selectedTrajectoryMonth.includes("Projected") && (
+                          <button
+                            onClick={() => setView("observatory")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-orange/15 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/25 transition-all micro-press"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Open Forecast Observatory
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => {
-                            setSelectedTrajectoryMonth(null);
-                            setSelectedPeriod("all");
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-brand-orange/15 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/25 transition-all cursor-pointer"
+                          onClick={() => setSelectedTrajectoryMonth(null)}
+                          className="px-2 py-1 rounded-lg text-[11px] font-medium text-text-muted hover:text-text-main hover:bg-surface-elevated transition-colors"
                         >
-                          Reset Filter (All Time)
+                          Reset Filter
                         </button>
                       </>
                     ) : (
@@ -2009,159 +1756,119 @@ export const DashboardPage: React.FC = () => {
               </div>
             </ChartFrame>
 
-            {(() => {
-              const activeDimensionLabel = availableDimensions.find((d) => d.role === breakdownDimension)?.label || "Category";
-              return (
-                <ChartFrame
-                  title={`${activeDimensionLabel} Breakdown`}
-                  subtitle={
-                    selectedCategory
-                      ? `Filtered: ${selectedCategory}`
-                      : `Share of Total ${breakdownMetricInfo.label} (${breakdown?.length || 0} ${activeDimensionLabel.toLowerCase()}s)`
-                  }
-                  onExplain={() => {
-                    setExplainPart("category");
-                    setExplainOpen(true);
-                  }}
-                  onViewEvidence={() => {
-                    setSelectedMetricId(breakdownMetricInfo.key);
-                    setEvidenceOpen(true);
-                  }}
-                  loading={isLoading}
-                  headerAction={
-                    <div className="flex items-center gap-2">
-                      {availableDimensions.length > 1 && (
-                        <div className="relative z-30 flex items-center gap-1 bg-surface-elevated/95 p-1 rounded-xl border border-surface-border shadow-sm">
-                          {availableDimensions.map((dim) => (
-                            <button
-                              key={dim.role}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setBreakdownDimension(dim.role);
-                                setSelectedCategory(null);
-                              }}
-                              className={cn(
-                                "px-2 py-0.5 rounded-lg font-mono font-bold text-[11px] transition-all cursor-pointer select-none",
-                                breakdownDimension === dim.role
-                                  ? "bg-brand-orange text-white shadow-glowSm ring-1 ring-brand-orange/60"
-                                  : "text-text-muted hover:text-text-main hover:bg-surface-subtle"
-                              )}
-                            >
-                              {dim.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {selectedCategory && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedCategory(null);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-brand-orange/20 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/30 transition-colors cursor-pointer relative z-30"
-                        >
-                          <span>Clear Filter</span>
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  }
-                  tableAlternative={
-                    <table className="w-full text-xs text-left">
-                      <thead>
-                        <tr className="border-b border-surface-border text-text-muted">
-                          <th className="py-2">Rank</th>
-                          <th className="py-2">{activeDimensionLabel}</th>
-                          <th className="py-2 text-right">
-                            {breakdownMetricInfo.label} {breakdownMetricInfo.isCurrency ? `(${sym})` : ""}
-                          </th>
-                          <th className="py-2 text-right">Share %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {breakdown?.map((b) => {
-                          const rowVal = b.metrics[breakdownMetricInfo.key] ?? b.metrics.total_revenue ?? b.metrics.total_orders ?? 0;
-                          const fmtVal = breakdownMetricInfo.isCurrency
-                            ? formatCurrency(rowVal, sym, activeGrouping)
-                            : `${Math.round(rowVal).toLocaleString()} orders`;
-                          return (
-                            <tr
-                              key={b.dimension_value}
-                              onClick={() => setSelectedCategory(selectedCategory === b.dimension_value ? null : b.dimension_value)}
-                              className={cn(
-                                "border-b border-surface-border/50 cursor-pointer transition-colors",
-                                selectedCategory === b.dimension_value ? "bg-brand-orange/15 font-bold" : "hover:bg-surface-elevated/40"
-                              )}
-                            >
-                              <td className="py-2 font-mono text-brand-orange">#{b.rank}</td>
-                              <td className="py-2 font-medium">{b.dimension_value}</td>
-                              <td className="py-2 text-right tabular-nums">{fmtVal}</td>
-                              <td className="py-2 text-right tabular-nums font-bold text-brand-orange">{b.share_pct}%</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  }
-                >
-                  {/* Bounded Scrollable Container to Prevent Grid Row Stretching & Panel Gaps */}
-                  <div className="space-y-2 pt-1 max-h-[340px] overflow-y-auto pr-1.5 custom-scrollbar">
-                    {breakdown && breakdown.length > 0 ? (
-                      breakdown.map((c) => {
-                        const rowVal = c.metrics[breakdownMetricInfo.key] ?? c.metrics.total_revenue ?? c.metrics.total_orders ?? 0;
-                        const formattedVal = breakdownMetricInfo.isCurrency
-                          ? formatCurrency(rowVal, sym, activeGrouping)
-                          : `${Math.round(rowVal).toLocaleString()} orders`;
-                        const isSelected = selectedCategory === c.dimension_value;
+            <ChartFrame
+              title="Category Contribution"
+              subtitle={
+                selectedCategory
+                  ? `Filtered: ${selectedCategory}`
+                  : `Share of Total Revenue (${breakdown?.length || 0} categories)`
+              }
+              onExplain={() => {
+                setExplainPart("category");
+                setExplainOpen(true);
+              }}
+              onViewEvidence={() => {
+                setSelectedMetricId("total_revenue");
+                setEvidenceOpen(true);
+              }}
+              loading={isLoading}
+              headerAction={
+                selectedCategory ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCategory(null);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-brand-orange/20 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/30 transition-colors cursor-pointer relative z-30"
+                  >
+                    <span>Clear Filter</span>
+                    <X className="w-3 h-3" />
+                  </button>
+                ) : undefined
+              }
+              tableAlternative={
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-surface-border text-text-muted">
+                      <th className="py-2">Rank</th>
+                      <th className="py-2">Category</th>
+                      <th className="py-2 text-right">Revenue ({sym})</th>
+                      <th className="py-2 text-right">Share %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breakdown?.map((b) => (
+                      <tr
+                        key={b.dimension_value}
+                        onClick={() => setSelectedCategory(selectedCategory === b.dimension_value ? null : b.dimension_value)}
+                        className={cn(
+                          "border-b border-surface-border/50 cursor-pointer transition-colors",
+                          selectedCategory === b.dimension_value ? "bg-brand-orange/15 font-bold" : "hover:bg-surface-elevated/40"
+                        )}
+                      >
+                        <td className="py-2 font-mono text-brand-orange">#{b.rank}</td>
+                        <td className="py-2 font-medium">{b.dimension_value}</td>
+                        <td className="py-2 text-right tabular-nums">{formatCurrency(b.metrics.total_revenue || 0, sym, activeGrouping)}</td>
+                        <td className="py-2 text-right tabular-nums font-bold text-brand-orange">{b.share_pct}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            >
+              {/* Bounded Scrollable Container to Prevent Grid Row Stretching & Panel Gaps */}
+              <div className="space-y-2 pt-1 max-h-[340px] overflow-y-auto pr-1.5 custom-scrollbar">
+                {breakdown && breakdown.length > 0 ? (
+                  breakdown.map((c) => {
+                    const rev = c.metrics.total_revenue || 0;
+                    const formattedRev = formatCurrency(rev, sym, activeGrouping);
+                    const isSelected = selectedCategory === c.dimension_value;
 
-                        return (
+                    return (
+                      <div
+                        key={c.dimension_value}
+                        onClick={() => setSelectedCategory(isSelected ? null : c.dimension_value)}
+                        className={cn(
+                          "p-2.5 rounded-xl border text-xs cursor-pointer transition-all duration-200 micro-press group",
+                          isSelected
+                            ? "bg-brand-orange/15 border-brand-orange shadow-glowSm ring-1 ring-brand-orange/50"
+                            : "bg-surface-elevated/30 border-surface-border/60 hover:bg-surface-elevated/60 hover:border-surface-border"
+                        )}
+                      >
+                        <div className="flex justify-between font-medium mb-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-brand-orange font-mono font-bold">#{c.rank}</span>
+                            <span className={cn("transition-colors", isSelected ? "text-brand-orange font-bold" : "text-text-main group-hover:text-brand-orange")}>
+                              {c.dimension_value}
+                            </span>
+                          </span>
+                          <span className="tabular-nums font-bold text-brand-orange">
+                            {formattedRev} ({c.share_pct}%)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-surface-border/70 overflow-hidden glass-panel p-0.5">
                           <div
-                            key={c.dimension_value}
-                            onClick={() => setSelectedCategory(isSelected ? null : c.dimension_value)}
                             className={cn(
-                              "p-2.5 rounded-xl border text-xs cursor-pointer transition-all duration-200 micro-press group",
+                              "h-full rounded-full transition-all duration-500 bar-3d",
                               isSelected
-                                ? "bg-brand-orange/15 border-brand-orange shadow-glowSm ring-1 ring-brand-orange/50"
-                                : "bg-surface-elevated/30 border-surface-border/60 hover:bg-surface-elevated/60 hover:border-surface-border"
+                                ? "bg-gradient-to-r from-brand-orange via-amber-400 to-amber-300 shadow-glowSm"
+                                : "bg-gradient-to-r from-brand-orange to-brand-amber shadow-glowSm"
                             )}
-                          >
-                            <div className="flex justify-between font-medium mb-1.5">
-                              <span className="flex items-center gap-1.5">
-                                <span className="text-[10px] text-brand-orange font-mono font-bold">#{c.rank}</span>
-                                <span className={cn("transition-colors", isSelected ? "text-brand-orange font-bold" : "text-text-main group-hover:text-brand-orange")}>
-                                  {c.dimension_value}
-                                </span>
-                              </span>
-                              <span className="tabular-nums font-bold text-brand-orange">
-                                {formattedVal} ({c.share_pct}%)
-                              </span>
-                            </div>
-                            <div className="h-2 rounded-full bg-surface-border/70 overflow-hidden glass-panel p-0.5">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full transition-all duration-500 bar-3d",
-                                  isSelected
-                                    ? "bg-gradient-to-r from-brand-orange via-amber-400 to-amber-300 shadow-glowSm"
-                                    : "bg-gradient-to-r from-brand-orange to-brand-amber shadow-glowSm"
-                                )}
-                                style={{ width: `${Math.min(c.share_pct, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-xs text-text-muted text-center py-12 flex flex-col items-center justify-center gap-2">
-                        <Database className="w-5 h-5 text-text-muted/60" />
-                        <span>No {activeDimensionLabel.toLowerCase()} breakdown discovered in active dataset</span>
+                            style={{ width: `${Math.min(c.share_pct, 100)}%` }}
+                          />
+                        </div>
                       </div>
-                    )}
+                    );
+                  })
+                ) : (
+                  <div className="text-xs text-text-muted text-center py-12 flex flex-col items-center justify-center gap-2">
+                    <Database className="w-5 h-5 text-text-muted/60" />
+                    <span>No breakdown data available for this selection</span>
                   </div>
-                </ChartFrame>
-              );
-            })()}
+                )}
+              </div>
+            </ChartFrame>
           </div>
         </div>
       )}
@@ -2628,11 +2335,8 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Backtest Detail Table Modal (SOLID, 100% NON-TRANSPARENT BACKGROUND) */}
-          {backtestModalOpen && typeof document !== "undefined" && createPortal(
-            <div
-              className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
-              onWheel={(e) => e.stopPropagation()}
-            >
+          {backtestModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
               <div className="w-full max-w-2xl rounded-2xl border border-surface-border bg-[#140F0C] p-6 shadow-2xl space-y-4 text-text-main">
                 <div className="flex items-center justify-between pb-3 border-b border-surface-border">
                   <div>
@@ -2699,8 +2403,7 @@ export const DashboardPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>,
-            document.body
+            </div>
           )}
         </div>
       )}

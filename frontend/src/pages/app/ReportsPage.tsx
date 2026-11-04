@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
 import { FactBadge } from "@/components/ui/FactBadge";
@@ -127,6 +126,17 @@ function createFallbackReport(
           status: "positive",
         },
       },
+      breakdown: preset.categories.map((c, i) => ({
+        dimension_value: c.name,
+        revenue: Math.round((rev * c.share_pct) / 100),
+        share_pct: c.share_pct,
+        rank: i + 1,
+      })),
+      trend_data: [
+        { period: "M-1", period_label: "Month 1", revenue: Math.round(rev * 0.30), orders: Math.round(orders * 0.29) },
+        { period: "M-2", period_label: "Month 2", revenue: Math.round(rev * 0.34), orders: Math.round(orders * 0.35) },
+        { period: "M-3", period_label: "Month 3", revenue: Math.round(rev * 0.36), orders: Math.round(orders * 0.36) },
+      ],
       dimension_breakdowns: {
         category: preset.categories.map((c, i) => ({
           dimension_value: c.name,
@@ -379,23 +389,25 @@ export const ReportsPage: React.FC = () => {
       let pEnd: string | undefined = undefined;
       let pLabel: string | undefined = undefined;
 
-      if (periodType === "monthly" && periodsInfo) {
-        const found = periodsInfo.available_months.find((m) => m.key === selectedPeriodKey);
+      if (periodType === "monthly" && periodsInfo?.available_months?.length) {
+        const key = selectedPeriodKey || periodsInfo.available_months[0].key;
+        const found = periodsInfo.available_months.find((m) => m.key === key) || periodsInfo.available_months[0];
         if (found) {
           pStart = found.start;
           pEnd = found.end;
           pLabel = found.label;
         }
-      } else if (periodType === "quarterly" && periodsInfo) {
-        const found = periodsInfo.available_quarters.find((q) => q.key === selectedPeriodKey);
+      } else if (periodType === "quarterly" && periodsInfo?.available_quarters?.length) {
+        const key = selectedPeriodKey || periodsInfo.available_quarters[0].key;
+        const found = periodsInfo.available_quarters.find((q) => q.key === key) || periodsInfo.available_quarters[0];
         if (found) {
           pStart = found.start;
           pEnd = found.end;
           pLabel = found.label;
         }
       } else if (periodType === "custom") {
-        pStart = customStartDate || undefined;
-        pEnd = customEndDate || undefined;
+        pStart = customStartDate || periodsInfo?.min_date || undefined;
+        pEnd = customEndDate || periodsInfo?.max_date || undefined;
         pLabel = pStart && pEnd ? `${pStart} to ${pEnd}` : "Custom Period";
       }
 
@@ -426,6 +438,22 @@ export const ReportsPage: React.FC = () => {
     } finally {
       setIsGenerating(false);
       setGenerationStep("");
+    }
+  };
+
+  const handlePeriodTypeChange = (pId: string) => {
+    setPeriodType(pId);
+    if (pId === "monthly" && periodsInfo?.available_months?.length) {
+      if (!selectedPeriodKey || !periodsInfo.available_months.some((m) => m.key === selectedPeriodKey)) {
+        setSelectedPeriodKey(periodsInfo.available_months[0].key);
+      }
+    } else if (pId === "quarterly" && periodsInfo?.available_quarters?.length) {
+      if (!selectedPeriodKey || !periodsInfo.available_quarters.some((q) => q.key === selectedPeriodKey)) {
+        setSelectedPeriodKey(periodsInfo.available_quarters[0].key);
+      }
+    } else if (pId === "custom" && periodsInfo) {
+      if (!customStartDate && periodsInfo.min_date) setCustomStartDate(periodsInfo.min_date);
+      if (!customEndDate && periodsInfo.max_date) setCustomEndDate(periodsInfo.max_date);
     }
   };
 
@@ -489,20 +517,73 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
-  const triggerDownload = (url: string, filename: string) => {
-    if (activeReport?.id.startsWith("preview-")) {
-      const p = PRESET_DATASETS.find((pr) => pr.id === selectedDatasetId) || activePreset;
-      const csvContent =
-        "Category,Share %,Revenue,Transactions\n" +
-        p.categories
-          .map(
-            (c) =>
-              `"${c.name}",${c.share_pct}%,${Math.round((p.revenue_raw * c.share_pct) / 100)},${Math.round(
-                (p.total_orders * c.share_pct) / 100
-              )}`
-          )
-          .join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const triggerDownload = async (url: string, filename: string) => {
+    setErrorMsg(null);
+    try {
+      let downloadUrl = url;
+
+      // If activeReport is a client-side preview, generate a real management snapshot on the fly first!
+      if (activeReport?.id.startsWith("preview-")) {
+        setIsGenerating(true);
+        setGenerationStep("Generating certified executive snapshot...");
+
+        let pStart: string | undefined = undefined;
+        let pEnd: string | undefined = undefined;
+        let pLabel: string | undefined = undefined;
+
+        if (periodType === "monthly" && periodsInfo?.available_months?.length) {
+          const key = selectedPeriodKey || periodsInfo.available_months[0].key;
+          const found = periodsInfo.available_months.find((m) => m.key === key) || periodsInfo.available_months[0];
+          if (found) {
+            pStart = found.start;
+            pEnd = found.end;
+            pLabel = found.label;
+          }
+        } else if (periodType === "quarterly" && periodsInfo?.available_quarters?.length) {
+          const key = selectedPeriodKey || periodsInfo.available_quarters[0].key;
+          const found = periodsInfo.available_quarters.find((q) => q.key === key) || periodsInfo.available_quarters[0];
+          if (found) {
+            pStart = found.start;
+            pEnd = found.end;
+            pLabel = found.label;
+          }
+        } else if (periodType === "custom") {
+          pStart = customStartDate || periodsInfo?.min_date || undefined;
+          pEnd = customEndDate || periodsInfo?.max_date || undefined;
+          pLabel = pStart && pEnd ? `${pStart} to ${pEnd}` : "Custom Period";
+        }
+
+        const activeFilters: Record<string, any> = {};
+        if (selectedCategories.length > 0) activeFilters["categories"] = selectedCategories;
+        if (selectedRegions.length > 0) activeFilters["regions"] = selectedRegions;
+
+        const generated = await api.generateReport({
+          dataset_id: selectedDatasetId || undefined,
+          type: reportType,
+          period_type: periodType,
+          period_start: pStart,
+          period_end: pEnd,
+          period_label: pLabel,
+          sections: selectedSections,
+          title: customTitle.trim() || undefined,
+          filters: activeFilters,
+        });
+
+        setActiveReport(generated);
+        const updatedList = await api.getReports();
+        setReportsList(updatedList);
+
+        downloadUrl = filename.endsWith(".csv")
+          ? api.getReportCsvUrl(generated.id)
+          : api.getReportPdfUrl(generated.id);
+      }
+
+      // Download file blob via fetch
+      const res = await fetch(downloadUrl);
+      if (!res.ok) {
+        throw new Error(`Download failed with status ${res.status}`);
+      }
+      const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -511,14 +592,13 @@ export const ReportsPage: React.FC = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
-      return;
+      setSuccessMsg(`Downloaded ${filename} successfully.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to download document");
+    } finally {
+      setIsGenerating(false);
+      setGenerationStep("");
     }
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   };
 
   const selectedDs = datasets.find((d) => d.id === selectedDatasetId);
@@ -587,7 +667,7 @@ export const ReportsPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Configuration Form (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
-          <GlassCard slide="none" tilt hoverGlow className="p-6 space-y-6 card-3d">
+          <GlassCard variant="default" hoverGlow className="p-6 space-y-6 border-surface-border shadow-lg">
             <div className="border-b border-surface-border pb-3 flex items-center justify-between">
               <h2 className="text-sm font-bold text-text-main flex items-center gap-2">
                 <FileText className="w-4 h-4 text-brand-orange" />
@@ -597,7 +677,7 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {/* Target Dataset Selection */}
-            <div>
+            <div className="relative z-10">
               <label className="text-xs font-bold uppercase tracking-wider text-text-muted block mb-1.5">
                 Target Dataset
               </label>
@@ -606,7 +686,7 @@ export const ReportsPage: React.FC = () => {
                   value={selectedDatasetId}
                   onChange={(e) => handleDatasetChange(e.target.value)}
                   style={{ colorScheme: "dark" }}
-                  className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none focus:border-brand-orange transition-colors"
+                  className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none focus:border-brand-orange transition-all cursor-pointer relative z-10 shadow-inner"
                 >
                   {datasets.map((d) => (
                     <option
@@ -620,14 +700,14 @@ export const ReportsPage: React.FC = () => {
                   ))}
                 </select>
               ) : (
-                <div className="p-3 rounded-xl bg-surface-subtle border border-surface-border text-xs text-text-muted">
+                <div className="p-3 rounded-xl bg-surface-subtle/60 backdrop-blur-md border border-surface-border text-xs text-text-muted">
                   No datasets found. Please seed the demo dataset from Datasets page.
                 </div>
               )}
             </div>
 
             {/* Report Type Radios */}
-            <div>
+            <div className="relative z-10">
               <label className="text-xs font-bold uppercase tracking-wider text-text-muted block mb-2">
                 Report Type
               </label>
@@ -655,10 +735,10 @@ export const ReportsPage: React.FC = () => {
                       key={t.id}
                       type="button"
                       onClick={() => setReportType(t.id)}
-                      className={`p-3 rounded-xl border text-left transition-all ${
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative z-10 glass-tile ${
                         isSelected
-                          ? "border-brand-orange bg-brand-orange/10 shadow-glowSm"
-                          : "border-surface-border bg-surface-subtle/50 hover:border-surface-border/80"
+                          ? "glass-tile-active"
+                          : "hover:border-brand-orange/40"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -675,7 +755,7 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {/* Period Type Radios (Monthly, Quarterly, Custom, All Time) */}
-            <div>
+            <div className="relative z-10">
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-text-muted">
                   Period Scope
@@ -699,13 +779,13 @@ export const ReportsPage: React.FC = () => {
                       key={p.id}
                       type="button"
                       disabled={p.disabled}
-                      onClick={() => setPeriodType(p.id)}
-                      className={`py-2 px-2.5 rounded-xl border text-center text-xs font-medium transition-all ${
+                      onClick={() => handlePeriodTypeChange(p.id)}
+                      className={`py-2 px-2.5 rounded-xl border text-center text-xs font-medium transition-all cursor-pointer relative z-10 glass-tile ${
                         isSelected
-                          ? "border-brand-orange bg-brand-orange/15 text-brand-orange font-bold shadow-glowSm"
+                          ? "glass-tile-active font-bold text-brand-orange"
                           : p.disabled
                           ? "border-surface-border/40 opacity-40 cursor-not-allowed text-text-muted"
-                          : "border-surface-border bg-surface-subtle/50 text-text-main hover:border-surface-border/80"
+                          : "text-text-main hover:border-brand-orange/40"
                       }`}
                     >
                       {p.label}
@@ -722,7 +802,7 @@ export const ReportsPage: React.FC = () => {
                     value={selectedPeriodKey}
                     onChange={(e) => setSelectedPeriodKey(e.target.value)}
                     style={{ colorScheme: "dark" }}
-                    className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-brand-orange"
+                    className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-brand-orange cursor-pointer relative z-10 shadow-inner"
                   >
                     {periodsInfo.available_months.map((m) => (
                       <option key={m.key} value={m.key} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }} className="bg-[#140f0b] text-[#fff4ea] py-1.5 font-medium">
@@ -742,7 +822,7 @@ export const ReportsPage: React.FC = () => {
                     value={selectedPeriodKey}
                     onChange={(e) => setSelectedPeriodKey(e.target.value)}
                     style={{ colorScheme: "dark" }}
-                    className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-brand-orange"
+                    className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-brand-orange cursor-pointer relative z-10 shadow-inner"
                   >
                     {periodsInfo.available_quarters.map((q) => (
                       <option key={q.key} value={q.key} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }} className="bg-[#140f0b] text-[#fff4ea] py-1.5 font-medium">
@@ -763,7 +843,7 @@ export const ReportsPage: React.FC = () => {
                       min={periodsInfo?.min_date || undefined}
                       max={periodsInfo?.max_date || undefined}
                       onChange={(e) => setCustomStartDate(e.target.value)}
-                      className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-brand-orange"
+                      className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-brand-orange cursor-pointer relative z-10 shadow-inner"
                     />
                   </div>
                   <div>
@@ -774,7 +854,7 @@ export const ReportsPage: React.FC = () => {
                       min={periodsInfo?.min_date || undefined}
                       max={periodsInfo?.max_date || undefined}
                       onChange={(e) => setCustomEndDate(e.target.value)}
-                      className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-brand-orange"
+                      className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-brand-orange cursor-pointer relative z-10 shadow-inner"
                     />
                   </div>
                 </div>
@@ -782,7 +862,7 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {/* Custom Title Input */}
-            <div>
+            <div className="relative z-10">
               <label className="text-xs font-bold uppercase tracking-wider text-text-muted block mb-1.5">
                 Custom Title (Optional)
               </label>
@@ -791,12 +871,12 @@ export const ReportsPage: React.FC = () => {
                 placeholder={selectedDs ? `${selectedDs.name} — Q3 Executive Review` : "e.g. Q3 Management Intelligence Review"}
                 value={customTitle}
                 onChange={(e) => setCustomTitle(e.target.value)}
-                className="w-full bg-surface-subtle border border-surface-border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none focus:border-brand-orange transition-colors"
+                className="w-full bg-surface-subtle/60 backdrop-blur-md border border-surface-border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none focus:border-brand-orange transition-colors relative z-10 shadow-inner"
               />
             </div>
 
             {/* Report Contents Checkboxes with Capability Model */}
-            <div>
+            <div className="relative z-10">
               <label className="text-xs font-bold uppercase tracking-wider text-text-muted block mb-2">
                 Report Contents & Modules
               </label>
@@ -808,12 +888,12 @@ export const ReportsPage: React.FC = () => {
                     <div
                       key={sec.id}
                       onClick={() => isAvailable && toggleSection(sec.id)}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                      className={`p-2.5 rounded-xl border flex items-center justify-between transition-all cursor-pointer relative z-10 glass-tile ${
                         !isAvailable
                           ? "border-surface-border/40 bg-surface-subtle/30 opacity-40 cursor-not-allowed"
                           : isChecked
-                          ? "border-brand-orange/40 bg-brand-orange/5 cursor-pointer"
-                          : "border-surface-border bg-surface-subtle/40 hover:border-surface-border/80 cursor-pointer"
+                          ? "glass-tile-active"
+                          : "hover:border-brand-orange/40"
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -822,7 +902,7 @@ export const ReportsPage: React.FC = () => {
                           checked={isChecked}
                           disabled={!isAvailable}
                           onChange={() => {}} // handled by row click
-                          className="rounded border-surface-border text-brand-orange focus:ring-brand-orange"
+                          className="rounded border-surface-border text-brand-orange focus:ring-brand-orange cursor-pointer"
                         />
                         <div>
                           <span className={`text-xs font-medium block ${isChecked ? "text-text-main" : "text-text-muted"}`}>
@@ -843,7 +923,7 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {/* Active Filters Summary Card */}
-            <div className="p-3.5 rounded-xl bg-surface-subtle border border-surface-border space-y-2">
+            <div className="p-3.5 rounded-xl bg-surface-subtle/80 backdrop-blur-md border border-surface-border space-y-2 relative z-10">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
                   <Filter className="w-3.5 h-3.5 text-brand-orange" />
@@ -852,7 +932,7 @@ export const ReportsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsFilterDrawerOpen(true)}
-                  className="text-[11px] text-brand-orange hover:underline flex items-center gap-1"
+                  className="text-[11px] text-brand-orange hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <SlidersHorizontal className="w-3 h-3" />
                   Edit Filters
@@ -878,10 +958,10 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {/* Generate Action Button */}
-            <div className="pt-2">
+            <div className="pt-2 relative z-10">
               <Button
                 variant="primary"
-                className="w-full relative overflow-hidden"
+                className="w-full relative overflow-hidden cursor-pointer"
                 loading={isGenerating}
                 onClick={handleGenerate}
                 icon={<Sparkles className="w-4 h-4" />}
@@ -895,9 +975,13 @@ export const ReportsPage: React.FC = () => {
         {/* Right Column: Live Report Preview (7 cols) - Panel 8 Master Image Match */}
         <div className="lg:col-span-7 space-y-4">
           {activeReport ? (
-            <GlassCard slide="right" tilt hoverGlow className="p-6 space-y-6 border-brand-orange/30 shadow-glowSm card-3d">
+            <GlassCard
+              variant="showcase"
+              hoverGlow
+              className="p-6 space-y-6 border-brand-orange/30 shadow-glowSm"
+            >
               {/* Preview Header Banner */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-surface-border gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-surface-border gap-2 relative z-10">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded">
@@ -920,10 +1004,11 @@ export const ReportsPage: React.FC = () => {
                 </div>
 
                 {/* Direct Actions: PDF, CSV, Full Preview */}
-                <div className="flex items-center gap-2 pt-2 sm:pt-0">
+                <div className="flex items-center gap-2 pt-2 sm:pt-0 relative z-10">
                   <Button
                     variant="primary"
                     size="sm"
+                    className="cursor-pointer"
                     onClick={() => triggerDownload(api.getReportPdfUrl(activeReport.id), `BizLens_${activeReport.type}.pdf`)}
                     icon={<Download className="w-3.5 h-3.5" />}
                   >
@@ -932,6 +1017,7 @@ export const ReportsPage: React.FC = () => {
                   <Button
                     variant="secondary"
                     size="sm"
+                    className="cursor-pointer"
                     onClick={() => triggerDownload(api.getReportCsvUrl(activeReport.id), `BizLens_${activeReport.type}.csv`)}
                     icon={<FileSpreadsheet className="w-3.5 h-3.5" />}
                   >
@@ -939,7 +1025,7 @@ export const ReportsPage: React.FC = () => {
                   </Button>
                   <button
                     onClick={() => setIsFullPreviewOpen(true)}
-                    className="p-2 rounded-xl border border-surface-border hover:border-brand-orange text-text-muted hover:text-brand-orange transition-colors"
+                    className="p-2 rounded-xl border border-surface-border hover:border-brand-orange text-text-muted hover:text-brand-orange transition-colors cursor-pointer"
                     title="Expand Full Preview"
                   >
                     <Eye className="w-4 h-4" />
@@ -950,7 +1036,7 @@ export const ReportsPage: React.FC = () => {
               {/* Panel 8 Visual Visualizations (Revenue Bar Chart + Category Donut Chart) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                 {/* Visual Bar Chart: Revenue Velocity */}
-                <div className="p-4 rounded-xl bg-surface-subtle border border-surface-border flex flex-col justify-between overflow-hidden">
+                <div className="p-4 rounded-xl bg-surface-subtle border border-surface-border flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
                       <BarChart3 className="w-3.5 h-3.5 text-brand-orange" />
@@ -960,35 +1046,30 @@ export const ReportsPage: React.FC = () => {
                   </div>
 
                   {trendData.length > 0 ? (
-                    <div className="h-32 flex items-end justify-between gap-1.5 sm:gap-2 pt-2 px-1 w-full overflow-hidden">
+                    <div className="h-36 flex items-end justify-between gap-3 pt-2 px-1">
                       {trendData.slice(0, 6).map((t: any, idx: number) => {
                         const rawRev = t.revenue ?? 0;
-                        const safeRev = Math.max(0, rawRev);
-                        const heightPct = Math.max(12, Math.min(100, Math.round((safeRev / maxTrendRevenue) * 90)));
-                        const formattedRev = formatCurrencyAmount(safeRev, activeCurrency, activeGrouping);
+                        const heightPct = Math.max(20, Math.min(100, Math.round((rawRev / maxTrendRevenue) * 100)));
+                        const formattedRev = formatCurrencyAmount(rawRev, activeCurrency, activeGrouping);
 
                         return (
-                          <div key={idx} className="flex-1 min-w-0 h-full flex flex-col items-center justify-end gap-1 group relative">
-                            {/* Floating Tooltip */}
-                            <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 whitespace-nowrap bg-surface-elevated/95 px-2 py-0.5 rounded border border-brand-orange/40 text-[9px] font-mono text-text-main shadow-lg">
-                              {t.period_label || t.period}: {formattedRev}
-                            </div>
-                            <span
-                              className="text-[10px] font-mono font-bold text-brand-orange opacity-90 group-hover:opacity-100 transition-opacity truncate max-w-full text-center block px-0.5"
-                              title={formattedRev}
-                            >
+                          <div key={idx} className="flex-1 h-full flex flex-col items-center justify-end gap-1.5 group">
+                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-[#FF9A3C] opacity-90 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                               {formattedRev}
                             </span>
-                            <div className="w-full flex-1 flex items-end justify-center px-0.5 pb-1">
+                            <div className="w-full h-24 flex items-end justify-center">
                               <div
-                                className="w-full max-w-[32px] sm:max-w-[38px] bg-gradient-to-t from-brand-orange via-brand-ember to-brand-amber rounded-t transition-all duration-300 shadow-glowSm group-hover:brightness-110 group-hover:scale-y-105 origin-bottom"
-                                style={{ height: `${heightPct}%`, minHeight: "8px" }}
+                                className="w-full max-w-[46px] transition-all duration-300 group-hover:brightness-125"
+                                style={{
+                                  height: `${heightPct}%`,
+                                  minHeight: "16px",
+                                  background: "linear-gradient(to top, #EA580C 0%, #FF7A1A 60%, #FFB347 100%)",
+                                  boxShadow: "0 0 16px rgba(255, 122, 26, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.45)",
+                                  borderRadius: "6px 6px 2px 2px",
+                                }}
                               />
                             </div>
-                            <span
-                              className="text-[10px] text-text-muted truncate w-full text-center font-medium font-mono block"
-                              title={t.period_label || t.period}
-                            >
+                            <span className="text-[10px] sm:text-[11px] text-text-muted truncate max-w-[64px] text-center font-medium mt-1">
                               {t.period_label || t.period}
                             </span>
                           </div>
@@ -996,31 +1077,30 @@ export const ReportsPage: React.FC = () => {
                       })}
                     </div>
                   ) : breakdownData.length > 0 ? (
-                    <div className="h-32 flex items-end justify-between gap-1.5 sm:gap-2 pt-2 px-1 w-full overflow-hidden">
+                    <div className="h-36 flex items-end justify-between gap-3 pt-2 px-1">
                       {breakdownData.slice(0, 6).map((b: any, idx: number) => {
                         const rawRev = b.revenue ?? b.metrics?.total_revenue ?? 0;
-                        const safeRev = Math.max(0, rawRev);
-                        const heightPct = Math.max(12, Math.min(100, Math.round((safeRev / maxBreakdownRevenue) * 90)));
-                        const formattedRev = formatCurrencyAmount(safeRev, activeCurrency, activeGrouping);
+                        const heightPct = Math.max(20, Math.min(100, Math.round((rawRev / maxBreakdownRevenue) * 100)));
+                        const formattedRev = formatCurrencyAmount(rawRev, activeCurrency, activeGrouping);
 
                         return (
-                          <div key={idx} className="flex-1 min-w-0 h-full flex flex-col items-center justify-end gap-1 group relative">
-                            <span
-                              className="text-[10px] font-mono font-bold text-brand-orange opacity-90 group-hover:opacity-100 transition-opacity truncate max-w-full text-center block px-0.5"
-                              title={formattedRev}
-                            >
+                          <div key={idx} className="flex-1 h-full flex flex-col items-center justify-end gap-1.5 group">
+                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-[#FF9A3C] opacity-90 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                               {b.share_pct !== undefined ? `${b.share_pct.toFixed(0)}%` : formattedRev}
                             </span>
-                            <div className="w-full flex-1 flex items-end justify-center px-0.5 pb-1">
+                            <div className="w-full h-24 flex items-end justify-center">
                               <div
-                                className="w-full max-w-[32px] sm:max-w-[38px] bg-gradient-to-t from-brand-orange via-brand-ember to-brand-amber rounded-t transition-all duration-300 shadow-glowSm group-hover:brightness-110 group-hover:scale-y-105 origin-bottom"
-                                style={{ height: `${heightPct}%`, minHeight: "8px" }}
+                                className="w-full max-w-[46px] transition-all duration-300 group-hover:brightness-125"
+                                style={{
+                                  height: `${heightPct}%`,
+                                  minHeight: "16px",
+                                  background: "linear-gradient(to top, #EA580C 0%, #FF7A1A 60%, #FFB347 100%)",
+                                  boxShadow: "0 0 16px rgba(255, 122, 26, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.45)",
+                                  borderRadius: "6px 6px 2px 2px",
+                                }}
                               />
                             </div>
-                            <span
-                              className="text-[10px] text-text-muted truncate w-full text-center font-medium font-mono block"
-                              title={b.dimension_value}
-                            >
+                            <span className="text-[10px] sm:text-[11px] text-text-muted truncate max-w-[64px] text-center font-medium mt-1">
                               {b.dimension_value}
                             </span>
                           </div>
@@ -1028,7 +1108,7 @@ export const ReportsPage: React.FC = () => {
                       })}
                     </div>
                   ) : (
-                    <div className="h-32 flex items-center justify-center text-xs text-text-muted">
+                    <div className="h-36 flex items-center justify-center text-xs text-text-muted">
                       No trend points recorded
                     </div>
                   )}
@@ -1362,11 +1442,8 @@ export const ReportsPage: React.FC = () => {
       </div>
 
       {/* Filter Configuration Drawer / Modal (SOLID, 100% NON-TRANSPARENT BACKGROUND) */}
-      {isFilterDrawerOpen && periodsInfo && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
-          onWheel={(e) => e.stopPropagation()}
-        >
+      {isFilterDrawerOpen && periodsInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="w-full max-w-lg p-6 space-y-6 shadow-2xl rounded-2xl border border-surface-border bg-[#140F0C] text-text-main">
             <div className="flex items-center justify-between border-b border-surface-border pb-3">
               <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
@@ -1461,16 +1538,12 @@ export const ReportsPage: React.FC = () => {
               </Button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {/* Full Preview Modal (SOLID, 100% NON-TRANSPARENT BACKGROUND) */}
-      {isFullPreviewOpen && activeReport && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
-          onWheel={(e) => e.stopPropagation()}
-        >
+      {isFullPreviewOpen && activeReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto p-8 space-y-6 shadow-2xl rounded-2xl border border-surface-border bg-[#140F0C] text-text-main">
             <div className="flex items-center justify-between border-b border-surface-border pb-4">
               <div>
@@ -1566,8 +1639,7 @@ export const ReportsPage: React.FC = () => {
               </Button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );

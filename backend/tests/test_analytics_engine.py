@@ -165,6 +165,5 @@ def test_unmapped_roles_return_structured_unavailable(sample_parquet: Path):
     assert res.metrics["gross_profit"].value is None
     assert "Missing required semantic roles: cost" in res.metrics["gross_profit"].unavailable_reason
 
-    # total_orders is always computable (falls back to row count when id is absent)
-    assert res.metrics["total_orders"].is_available is True
-    assert res.metrics["total_orders"].value == 5.0
+    assert res.metrics["total_orders"].is_available is False
+    assert "Missing required semantic roles: id" in res.metrics["total_orders"].unavailable_reason

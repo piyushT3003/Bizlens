@@ -53,4 +53,4 @@ def test_profiler_statistics_and_quality_score(tmp_path):
     qs = profile_res.quality_score
     assert 0.0 <= qs.score <= 100.0
     assert qs.completeness >= 90.0  # only 20 nulls out of 500 total cells
-    assert qs.formula_version in ("v1.0", "v1.2-audited")
+    assert qs.formula_version == "v1.0"

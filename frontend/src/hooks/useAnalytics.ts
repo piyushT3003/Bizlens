@@ -239,7 +239,6 @@ export function useAnalytics() {
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("all");
-  const [breakdownDimension, setBreakdownDimension] = useState<string>("category");
   const [periodOptions, setPeriodOptions] = useState<PeriodOptionItem[]>([
     { key: "all", label: "All Time" },
   ]);
@@ -258,7 +257,6 @@ export function useAnalytics() {
     let isCancelled = false;
     setSelectedCategory(null);
     setSelectedPeriod("all");
-    setBreakdownDimension("category");
 
     api.getDatasetPeriods(dsId)
       .then((info) => {
@@ -268,9 +266,8 @@ export function useAnalytics() {
           for (const q of info.available_quarters) {
             opts.push({ key: q.key, label: q.label, start: q.start, end: q.end });
           }
-        }
-        if (info && info.available_months && info.available_months.length > 0) {
-          for (const m of info.available_months) {
+        } else if (info && info.available_months && info.available_months.length > 0) {
+          for (const m of info.available_months.slice(-6)) {
             opts.push({ key: m.key, label: m.label, start: m.start, end: m.end });
           }
         }
@@ -306,13 +303,6 @@ export function useAnalytics() {
         const opt = periodOptions.find((p) => p.key === selectedPeriod);
         if (opt?.start && opt?.end) {
           filters.date_range = { start: opt.start, end: opt.end };
-        } else if (/^\d{4}-\d{2}$/.test(selectedPeriod)) {
-          const [yr, mo] = selectedPeriod.split("-").map(Number);
-          const lastDay = new Date(yr, mo, 0).getDate();
-          filters.date_range = {
-            start: `${selectedPeriod}-01`,
-            end: `${selectedPeriod}-${String(lastDay).padStart(2, "0")}`,
-          };
         }
       }
 
@@ -325,9 +315,6 @@ export function useAnalytics() {
           "gross_margin_pct",
           "total_units",
           "avg_order_value",
-          "units_per_order",
-          "avg_unit_price",
-          "avg_discount_pct",
         ],
         filters: Object.keys(filters).length > 0 ? filters : undefined,
         compare_to_previous: true,
@@ -360,8 +347,8 @@ export function useAnalytics() {
         }
         const brkRes = await api.getBreakdown({
           dataset_id: dsId,
-          dimension_role: breakdownDimension,
-          metric_ids: ["total_revenue", "total_orders", "total_units"],
+          dimension_role: "category",
+          metric_ids: ["total_revenue", "total_orders"],
           filters: Object.keys(breakdownFilters).length > 0 ? breakdownFilters : undefined,
         });
         setBreakdown(brkRes && brkRes.length > 0 ? brkRes : []);
@@ -376,7 +363,7 @@ export function useAnalytics() {
     } finally {
       setIsLoading(false);
     }
-  }, [dsId, selectedCategory, selectedPeriod, breakdownDimension, periodOptions, prefCurrency, prefGrouping]);
+  }, [dsId, selectedCategory, selectedPeriod, periodOptions, prefCurrency, prefGrouping]);
 
   useEffect(() => {
     loadData();
@@ -385,8 +372,6 @@ export function useAnalytics() {
   return {
     metrics,
     breakdown,
-    breakdownDimension,
-    setBreakdownDimension,
     lineage,
     catalog,
     selectedCategory,

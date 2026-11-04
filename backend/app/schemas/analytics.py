@@ -123,6 +123,4 @@ class TrajectoryResponse(BaseModel):
     points: List[TrajectoryPointSchema]
     max_value: float
     min_value: float
-    metric_label: str = "Revenue"
-    unit: str = "currency"
 

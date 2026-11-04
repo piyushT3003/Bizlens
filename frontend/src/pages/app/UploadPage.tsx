@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
@@ -152,7 +151,6 @@ export const UploadPage: React.FC = () => {
         rowCount: 11106,
         colCount: 14,
         fileName: "retail_q3_enterprise.parquet",
-        isUpload: true,
       });
 
       const detail = await loadDemoDataset();
@@ -173,7 +171,6 @@ export const UploadPage: React.FC = () => {
       colCount: d.col_count || 12,
       fileName: d.source_filename_sanitized,
       targetUrl: "/app/dashboard",
-      isUpload: false,
     });
 
     try {
@@ -184,15 +181,11 @@ export const UploadPage: React.FC = () => {
   };
 
   const handleAnimationComplete = () => {
-    const isUploadFlow = ingestionModal.isUpload;
     setIngestionModal((prev) => ({ ...prev, isOpen: false }));
-    if (isUploadFlow) {
+    if (ingestionModal.isUpload || Object.keys(localMapping).length > 0) {
       setCurrentStep(3);
-      const mainContainer = document.querySelector("main.overflow-y-auto");
-      if (mainContainer) mainContainer.scrollTop = 0;
-      window.scrollTo(0, 0);
     } else {
-      navigate(ingestionModal.targetUrl || "/app/dashboard");
+      navigate("/app/dashboard");
     }
   };
 
@@ -627,11 +620,8 @@ export const UploadPage: React.FC = () => {
       )}
 
       {/* Delete Confirmation Modal (SOLID, 100% NON-TRANSPARENT BACKGROUND) */}
-      {deleteModal.isOpen && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
-          onWheel={(e) => e.stopPropagation()}
-        >
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
           <div className="w-full max-w-md rounded-2xl border border-surface-border bg-[#140F0C] p-6 shadow-2xl space-y-4 text-text-main">
             <div className="flex items-center gap-3 pb-3 border-b border-surface-border">
               <div className="p-2 rounded-xl bg-status-criticalBg text-status-critical border border-status-critical/30">
@@ -664,8 +654,7 @@ export const UploadPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );
