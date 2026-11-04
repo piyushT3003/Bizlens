@@ -194,23 +194,13 @@ export const DataManagementPage: React.FC = () => {
   };
 
   const handleOpenCleanModal = (type?: string, params?: Record<string, any>) => {
-    const targetType = type || "deduplicate_rows";
-    const targetParams = params || {};
-    setSelectedTransType(targetType);
-    setTransParams(targetParams);
+    setSelectedTransType(type || "deduplicate_rows");
+    setTransParams(params || {});
     setTransLabel("");
     setPreviewResult(null);
     setActionErrorMsg(null);
     setActionSuccessMsg(null);
     setIsCleanModalOpen(true);
-
-    if (activeDataset?.active_version_id && (params || type)) {
-      setIsPreviewing(true);
-      previewTransformation(activeDataset.active_version_id, targetType, targetParams)
-        .then((res) => setPreviewResult(res))
-        .catch((err) => console.warn("Auto-preview failed:", err))
-        .finally(() => setIsPreviewing(false));
-    }
   };
 
   const handleRunPreview = async () => {
@@ -253,17 +243,6 @@ export const DataManagementPage: React.FC = () => {
         `Success! Created version v${res.new_version_number} (${res.new_row_count.toLocaleString()} rows, ${res.new_quality_score ?? 100}% score).`
       );
       setPreviewResult(null);
-
-      // Immediately fetch and update the quality report for the new version
-      if (res.to_version_id) {
-        try {
-          const newReport = await api.getQualityReport(res.to_version_id);
-          setQualityReport(newReport);
-        } catch (repErr) {
-          console.warn("Failed to fetch quality report for new version:", repErr);
-        }
-      }
-
       setTimeout(() => {
         setIsCleanModalOpen(false);
         setActionSuccessMsg(null);
@@ -328,13 +307,6 @@ export const DataManagementPage: React.FC = () => {
     if (issueFilter === "all") return true;
     return issue.severity === issueFilter;
   });
-
-  const availableColumns =
-    activeDataset?.active_mapping && Object.keys(activeDataset.active_mapping).length > 0
-      ? Object.keys(activeDataset.active_mapping)
-      : previewData.columns.length > 0
-      ? previewData.columns
-      : Array.from(new Set((qualityReport?.issues || []).map((i) => i.column).filter(Boolean) as string[]));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -751,32 +723,11 @@ export const DataManagementPage: React.FC = () => {
                                 handleOpenCleanModal("trim_strings", {
                                   columns: issue.column ? [issue.column] : [],
                                 });
-                              } else if (
-                                issue.code === "HIGH_NULLS" ||
-                                issue.code === "EXCESSIVE_NULLS" ||
-                                issue.code === "MISSING_VALUES"
-                              ) {
+                              } else if (issue.code === "HIGH_NULLS" || issue.code === "EXCESSIVE_NULLS") {
                                 handleOpenCleanModal("fill_null_values", {
                                   columns: issue.column ? [issue.column] : [],
                                   strategy: "constant",
                                   value: "Unknown",
-                                });
-                              } else if (issue.code === "OUTLIER_VALUES") {
-                                handleOpenCleanModal("filter_outliers", {
-                                  column: issue.column,
-                                  action: "drop",
-                                  threshold: 1.5,
-                                });
-                              } else if (issue.code === "CASING_INCONSISTENCY") {
-                                handleOpenCleanModal("standardize_categories", {
-                                  column: issue.column,
-                                  case_rule: "title",
-                                });
-                              } else if (issue.code === "UNEXPECTED_NEGATIVE_VALUES") {
-                                handleOpenCleanModal("filter_outliers", {
-                                  column: issue.column,
-                                  action: "drop",
-                                  threshold: 1.5,
                                 });
                               } else {
                                 handleOpenCleanModal();
@@ -1255,7 +1206,6 @@ export const DataManagementPage: React.FC = () => {
                   <div>
                     <label className="text-[11px] text-text-muted block mb-1">Target Column</label>
                     <select
-                      value={transParams.columns?.[0] || ""}
                       onChange={(e) =>
                         setTransParams({ ...transParams, columns: [e.target.value] })
                       }
@@ -1263,11 +1213,12 @@ export const DataManagementPage: React.FC = () => {
                       className="w-full bg-surface-card border border-surface-border text-text-main text-xs rounded p-2"
                     >
                       <option value="" style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>Select Column...</option>
-                      {availableColumns.map((col) => (
-                        <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
-                          {col}
-                        </option>
-                      ))}
+                      {activeDataset?.active_mapping &&
+                        Object.keys(activeDataset.active_mapping).map((col) => (
+                          <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
+                            {col}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div>
@@ -1307,7 +1258,6 @@ export const DataManagementPage: React.FC = () => {
                 <div className="space-y-2">
                   <label className="text-[11px] text-text-muted block">Target Column(s)</label>
                   <select
-                    value={transParams.columns?.[0] || ""}
                     onChange={(e) =>
                       setTransParams({
                         ...transParams,
@@ -1318,11 +1268,12 @@ export const DataManagementPage: React.FC = () => {
                     className="w-full bg-surface-card border border-surface-border text-text-main text-xs rounded p-2"
                   >
                     <option value="" style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>Any column containing NULL</option>
-                    {availableColumns.map((col) => (
-                      <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
-                        {col}
-                      </option>
-                    ))}
+                    {activeDataset?.active_mapping &&
+                      Object.keys(activeDataset.active_mapping).map((col) => (
+                        <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
+                          {col}
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
@@ -1338,7 +1289,6 @@ export const DataManagementPage: React.FC = () => {
                   <div>
                     <label className="text-[11px] text-text-muted block mb-1">Target Column</label>
                     <select
-                      value={transParams.column || ""}
                       onChange={(e) =>
                         setTransParams({ ...transParams, column: e.target.value })
                       }
@@ -1346,11 +1296,12 @@ export const DataManagementPage: React.FC = () => {
                       className="w-full bg-surface-card border border-surface-border text-text-main text-xs rounded p-2"
                     >
                       <option value="" style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>Select Column...</option>
-                      {availableColumns.map((col) => (
-                        <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
-                          {col}
-                        </option>
-                      ))}
+                      {activeDataset?.active_mapping &&
+                        Object.keys(activeDataset.active_mapping).map((col) => (
+                          <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
+                            {col}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div>
@@ -1376,7 +1327,6 @@ export const DataManagementPage: React.FC = () => {
                   <div>
                     <label className="text-[11px] text-text-muted block mb-1">Numeric Column</label>
                     <select
-                      value={transParams.column || ""}
                       onChange={(e) =>
                         setTransParams({ ...transParams, column: e.target.value })
                       }
@@ -1384,11 +1334,12 @@ export const DataManagementPage: React.FC = () => {
                       className="w-full bg-surface-card border border-surface-border text-text-main text-xs rounded p-2"
                     >
                       <option value="" style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>Select Column...</option>
-                      {availableColumns.map((col) => (
-                        <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
-                          {col}
-                        </option>
-                      ))}
+                      {activeDataset?.active_mapping &&
+                        Object.keys(activeDataset.active_mapping).map((col) => (
+                          <option key={col} value={col} style={{ backgroundColor: "#140f0b", color: "#fff4ea" }}>
+                            {col}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div>
@@ -1410,7 +1361,7 @@ export const DataManagementPage: React.FC = () => {
                     <input
                       type="number"
                       step="0.1"
-                      value={transParams.threshold !== undefined ? transParams.threshold : 1.5}
+                      defaultValue={1.5}
                       onChange={(e) =>
                         setTransParams({ ...transParams, threshold: parseFloat(e.target.value) })
                       }
@@ -1492,7 +1443,7 @@ export const DataManagementPage: React.FC = () => {
                 variant="primary"
                 size="sm"
                 loading={isApplying}
-                disabled={isApplying}
+                disabled={!previewResult}
                 onClick={handleApplyTransformation}
                 icon={<Check className="w-3.5 h-3.5" />}
               >

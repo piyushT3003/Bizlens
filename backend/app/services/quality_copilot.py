@@ -59,7 +59,7 @@ class QualityCopilotService:
                 )
                 seen_types.add("deduplicate_rows")
 
-            elif code in ("EXCESSIVE_NULLS", "HIGH_NULLS", "MISSING_VALUES") and col:
+            elif code in ("EXCESSIVE_NULLS", "HIGH_NULLS") and col:
                 action_key = f"fill_nulls_{col}"
                 if action_key not in seen_types:
                     actions.append(
@@ -93,36 +93,15 @@ class QualityCopilotService:
                     )
                     seen_types.add(action_key)
 
-            elif code == "CASING_INCONSISTENCY" and col:
-                action_key = f"casing_{col}"
-                if action_key not in seen_types:
-                    actions.append(
-                        QualityCopilotAction(
-                            type="standardize_categories",
-                            title=f"Standardize Casing in '{col}'",
-                            description=f"Convert category variants in '{col}' to Title Case for consistent grouping.",
-                            parameters={"column": col, "case_rule": "title"},
-                        )
-                    )
-                    seen_types.add(action_key)
-
-            elif code in ("OUTLIER_VALUES", "UNEXPECTED_NEGATIVE_VALUES") and col:
-                action_key = f"filter_outlier_{col}"
+            elif code == "UNEXPECTED_NEGATIVE_VALUES" and col:
+                action_key = f"filter_neg_{col}"
                 if action_key not in seen_types:
                     actions.append(
                         QualityCopilotAction(
                             type="filter_outliers",
-                            title=f"Filter Statistical Outliers in '{col}'",
-                            description=f"Drop or cap statistical outlier anomalies outside IQR range in '{col}'.",
-                            parameters={"column": col, "action": "drop", "threshold": 1.5},
-                        )
-                    )
-                    actions.append(
-                        QualityCopilotAction(
-                            type="filter_outliers",
-                            title=f"Cap Outliers in '{col}'",
-                            description=f"Cap extreme variance values in '{col}' to 1.5x IQR boundary without losing rows.",
-                            parameters={"column": col, "action": "cap", "threshold": 1.5},
+                            title=f"Filter Negative Values in '{col}'",
+                            description=f"Cap or filter negative anomaly values in non-negative metric column '{col}'.",
+                            parameters={"column": col, "action": "drop", "threshold": 2.0},
                         )
                     )
                     seen_types.add(action_key)
