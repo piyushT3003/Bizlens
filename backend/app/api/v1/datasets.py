@@ -224,6 +224,34 @@ def get_dataset(
     mapping = db.query(ColumnMapping).filter(ColumnMapping.version_id == dataset.active_version_id).first() if active_ver else None
     quality_report = db.query(QualityReport).filter(QualityReport.version_id == dataset.active_version_id).first() if active_ver else None
 
+    if active_ver and not quality_report and Path(active_ver.parquet_path).exists():
+        try:
+            profile_res = data_profiler.profile_parquet(
+                parquet_path=Path(active_ver.parquet_path),
+                dataset_id=dataset.id,
+                version_number=active_ver.version_number,
+            )
+            quality_report = QualityReport(
+                id=str(uuid.uuid4()),
+                version_id=active_ver.id,
+                score=profile_res.quality_score.score,
+                components={
+                    "completeness": profile_res.quality_score.completeness,
+                    "consistency": profile_res.quality_score.consistency,
+                    "validity": profile_res.quality_score.validity,
+                    "uniqueness": profile_res.quality_score.uniqueness,
+                    "anomaly_freedom": profile_res.quality_score.anomaly_freedom,
+                },
+                issues=profile_res.issues,
+                formula_version=profile_res.quality_score.formula_version,
+            )
+            db.add(quality_report)
+            active_ver.quality_score = profile_res.quality_score.score
+            db.commit()
+            db.refresh(quality_report)
+        except Exception as err:
+            logger.warning("Failed to auto-generate quality report for dataset %s: %s", dataset.id, err)
+
     return _build_detail_response(dataset, active_ver, mapping, quality_report)
 
 

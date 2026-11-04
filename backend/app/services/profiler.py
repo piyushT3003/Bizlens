@@ -34,7 +34,7 @@ class QualityScoreSummary:
     uniqueness: float
     anomaly_freedom: float
     total_issues_count: int
-    formula_version: str = "v1.0"
+    formula_version: str = "v1.2-audited"
 
 
 @dataclass
@@ -110,22 +110,31 @@ class DataProfiler:
 
                 col_issues: List[Dict[str, Any]] = []
 
-                # Check for critical null rates
+                # Check for critical and standard null rates
                 if null_pct > 50.0:
                     issue = {
                         "column": col_name,
                         "severity": "critical",
                         "code": "EXCESSIVE_NULLS",
-                        "message": f"Column '{orig_name}' is {null_pct}% null.",
+                        "message": f"Column '{orig_name}' is {null_pct}% null ({null_count:,} missing rows).",
                     }
                     col_issues.append(issue)
                     all_issues.append(issue)
-                elif null_pct > 20.0:
+                elif null_pct > 15.0:
                     issue = {
                         "column": col_name,
                         "severity": "warning",
                         "code": "HIGH_NULLS",
-                        "message": f"Column '{orig_name}' has {null_pct}% missing values.",
+                        "message": f"Column '{orig_name}' has {null_pct}% missing values ({null_count:,} rows).",
+                    }
+                    col_issues.append(issue)
+                    all_issues.append(issue)
+                elif null_count > 0:
+                    issue = {
+                        "column": col_name,
+                        "severity": "warning",
+                        "code": "MISSING_VALUES",
+                        "message": f"Column '{orig_name}' has {null_count:,} missing values ({null_pct}%).",
                     }
                     col_issues.append(issue)
                     all_issues.append(issue)
@@ -176,16 +185,50 @@ class DataProfiler:
                             }
                             # Negative value check for monetary or volume columns
                             if num_res[8] > 0 and any(
-                                term in col_name for term in ["revenue", "sales", "qty", "quantity", "price", "amount"]
+                                term in col_name.lower() for term in ["revenue", "sales", "qty", "quantity", "price", "unit_price", "cost", "unit_cost", "amount", "total"]
                             ):
                                 issue = {
                                     "column": col_name,
                                     "severity": "warning",
                                     "code": "UNEXPECTED_NEGATIVE_VALUES",
-                                    "message": f"Column '{orig_name}' has {num_res[8]} negative values in a likely non-negative field.",
+                                    "message": f"Column '{orig_name}' has {num_res[8]:,} negative values in a likely non-negative field.",
                                 }
                                 col_issues.append(issue)
                                 all_issues.append(issue)
+
+                            # Statistical outlier detection using 1.5x IQR
+                            q25 = num_res[4]
+                            q75 = num_res[6]
+                            if q25 is not None and q75 is not None:
+                                iqr = q75 - q25
+                                if iqr > 0:
+                                    lower_bound = q25 - (1.5 * iqr)
+                                    upper_bound = q75 + (1.5 * iqr)
+                                    try:
+                                        out_res = con.execute(
+                                            f'SELECT COUNT(*) FROM dataset WHERE "{col_name}" < {lower_bound} OR "{col_name}" > {upper_bound}'
+                                        ).fetchone()
+                                        outlier_count = out_res[0] if out_res else 0
+                                        if outlier_count > 0:
+                                            outlier_pct = round(outlier_count / non_null_count * 100, 1)
+                                            # Check if this exceeds anomaly significance threshold (5.0% or extreme 3.0x IQR)
+                                            extreme_lower = q25 - (3.0 * iqr)
+                                            extreme_upper = q75 + (3.0 * iqr)
+                                            ext_res = con.execute(
+                                                f'SELECT COUNT(*) FROM dataset WHERE "{col_name}" < {extreme_lower} OR "{col_name}" > {extreme_upper}'
+                                            ).fetchone()
+                                            extreme_count = ext_res[0] if ext_res else 0
+                                            if outlier_pct > 5.0 or extreme_count > 0:
+                                                issue = {
+                                                    "column": col_name,
+                                                    "severity": "warning",
+                                                    "code": "OUTLIER_VALUES",
+                                                    "message": f"Column '{orig_name}' has {outlier_count:,} statistical outlier(s) ({outlier_pct}%) outside IQR bounds [{lower_bound:.2f}, {upper_bound:.2f}].",
+                                                }
+                                                col_issues.append(issue)
+                                                all_issues.append(issue)
+                                    except Exception as out_err:
+                                        logger.debug("Outlier detection skipped for %s: %s", col_name, out_err)
                     except Exception as err:
                         logger.warning("Numeric profiling failed for %s: %s", col_name, err)
 
@@ -233,6 +276,22 @@ class DataProfiler:
                         categorical_stats = {
                             "top_values": top_values,
                         }
+
+                        # Casing variance check
+                        if family == "categorical" and distinct_count > 1:
+                            casing_res = con.execute(
+                                f'SELECT COUNT(DISTINCT LOWER("{col_name}")) FROM dataset WHERE "{col_name}" IS NOT NULL'
+                            ).fetchone()
+                            if casing_res and casing_res[0] is not None and casing_res[0] < distinct_count:
+                                casing_variants = distinct_count - casing_res[0]
+                                issue = {
+                                    "column": col_name,
+                                    "severity": "warning",
+                                    "code": "CASING_INCONSISTENCY",
+                                    "message": f"Column '{orig_name}' contains {casing_variants} category casing variance(s) (e.g. mixed uppercase and lowercase values).",
+                                }
+                                col_issues.append(issue)
+                                all_issues.append(issue)
                     except Exception as err:
                         logger.warning("Categorical profiling failed for %s: %s", col_name, err)
 
@@ -307,11 +366,17 @@ class DataProfiler:
                 if col.null_percentage > 50.0:
                     consistency_deductions += 5.0
             if untrimmed_total > 0 and total_rows > 0:
-                consistency_deductions += min(25.0, round(untrimmed_total / total_rows * 20.0, 1))
+                consistency_deductions += min(20.0, round(untrimmed_total / total_rows * 20.0, 1))
+            casing_issues = [i for i in all_issues if i.get("code") == "CASING_INCONSISTENCY"]
+            if casing_issues:
+                consistency_deductions += min(15.0, len(casing_issues) * 3.0)
             consistency = max(0.0, 100.0 - consistency_deductions)
 
-            # Component 4: Validity (30% weight) - deduct for unexpected negatives, unparseables
-            validity_deductions = len([i for i in all_issues if i.get("code") in ("UNEXPECTED_NEGATIVE_VALUES", "INVALID_DATE")]) * 10.0
+            # Component 4: Validity (30% weight) - deduct for unexpected negatives, unparseables, and statistical outliers
+            validity_deductions = len([i for i in all_issues if i.get("code") in ("UNEXPECTED_NEGATIVE_VALUES", "INVALID_DATE")]) * 8.0
+            outlier_issues = [i for i in all_issues if i.get("code") == "OUTLIER_VALUES"]
+            if outlier_issues:
+                validity_deductions += min(15.0, len(outlier_issues) * 2.5)
             validity = max(0.0, 100.0 - validity_deductions)
 
             critical_count = len([i for i in all_issues if i.get("severity") == "critical"])
