@@ -33,6 +33,24 @@ if str(BACKEND_DIR) not in sys.path:
 os.environ["PYTHONPATH"] = str(BACKEND_DIR) + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 
+def ensure_port_free(port: int = 8000):
+    """Ensure the target port is free before starting Uvicorn, preventing [Errno 10048]."""
+    try:
+        current_pid = os.getpid()
+        if os.name == "nt":
+            out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True, stderr=subprocess.DEVNULL).decode()
+            for line in out.strip().splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
+                    pid = int(parts[4])
+                    if pid != current_pid and pid > 0:
+                        print(f"[BizLens] Freeing port {port} (terminating lingering process PID {pid})...")
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True, check=False)
+                        time.sleep(1.0)
+    except Exception:
+        pass
+
+
 def open_browser(url: str, delay: float = 1.5):
     """Open default web browser after server initializes."""
     def _open():
@@ -47,6 +65,7 @@ def open_browser(url: str, delay: float = 1.5):
 
 def run_dev_mode():
     """Concurrently run FastAPI backend (8000) and Vite frontend (5173) with hot reload."""
+    ensure_port_free(8000)
     print("=" * 65)
     print("  BizLens - Autonomous BI Engine [DEVELOPMENT MODE]")
     print("  Backend API:      http://127.0.0.1:8000")
@@ -82,6 +101,7 @@ def run_dev_mode():
 
 def run_unified_mode():
     """Run unified full-stack application from FastAPI on port 8000 (serves frontend + backend)."""
+    ensure_port_free(8000)
     # Verify frontend dist exists; if not, build it automatically
     if not (DIST_DIR / "index.html").exists():
         print("[BizLens] Production frontend build not found. Building with Vite...")

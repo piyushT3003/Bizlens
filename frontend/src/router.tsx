@@ -32,6 +32,7 @@ export const router = createBrowserRouter([
   { path: "/signup", element: <SignupPage /> },
   // Root Aliases & Shortcuts
   { path: "/dashboard", element: <Navigate to="/app/dashboard" replace /> },
+  { path: "/overview", element: <Navigate to="/app/dashboard" replace /> },
   { path: "/observatory", element: <Navigate to="/app/dashboard" replace /> },
   { path: "/reports", element: <Navigate to="/app/reports" replace /> },
   { path: "/upload", element: <Navigate to="/app/upload" replace /> },
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/app/home" replace /> },
       { path: "home", element: <AppHomePage /> },
       { path: "dashboard", element: <DashboardPage /> },
+      { path: "overview", element: <Navigate to="/app/dashboard" replace /> },
       { path: "upload", element: <UploadPage /> },
       { path: "ask", element: <AskPage /> },
       { path: "ask/:sessionId", element: <AskPage /> },
