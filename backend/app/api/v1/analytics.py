@@ -68,25 +68,7 @@ def _resolve_dataset_and_mapping(
     if not version:
         raise NotFoundError("Dataset version record not found.")
 
-    p = Path(version.parquet_path)
-    if not p.exists():
-        cand = Path("backend") / version.parquet_path
-        if cand.is_file():
-            p = cand
-        elif "storage" in str(version.parquet_path):
-            rel_part = str(version.parquet_path).split("storage", 1)[1].lstrip("\\/")
-            for base in [Path("storage"), Path("backend/storage"), Path("../storage")]:
-                cand2 = (base / rel_part).resolve()
-                if cand2.is_file():
-                    p = cand2
-                    break
-        if not p.exists():
-            for base in [Path("storage"), Path("backend/storage")]:
-                if base.exists():
-                    matched = list(base.glob(f"**/{Path(version.parquet_path).name}"))
-                    if matched and matched[0].is_file():
-                        p = matched[0].resolve()
-                        break
+    p = version.resolved_parquet_path
     if not p.exists():
         raise NotFoundError(f"Dataset version Parquet file not found on disk at {version.parquet_path}.")
     version.parquet_path = str(p)

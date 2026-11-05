@@ -167,7 +167,7 @@ class ScenarioEngine:
         if not version:
             return self.get_baseline_facts(db, "ds-retail-q3")
 
-        parquet_path = Path(version.parquet_path)
+        parquet_path = version.resolved_parquet_path
         if not parquet_path.exists():
             return self.get_baseline_facts(db, "ds-retail-q3")
 

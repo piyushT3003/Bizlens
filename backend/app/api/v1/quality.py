@@ -49,7 +49,7 @@ def _get_version_or_404(db: Session, version_id: str) -> DatasetVersion:
 def _get_or_create_quality_report(db: Session, version: DatasetVersion) -> QualityReport:
     report = db.query(QualityReport).filter(QualityReport.version_id == version.id).first()
     if not report:
-        parquet_path = Path(version.parquet_path)
+        parquet_path = version.resolved_parquet_path
         if parquet_path.exists():
             try:
                 profile_res = data_profiler.profile_parquet(
@@ -154,7 +154,7 @@ def preview_transformation(
     """Preview a transformation in-memory without mutating Parquet storage."""
     version = _get_version_or_404(db, version_id)
     return transformation_service.preview_transformation(
-        parquet_path=Path(version.parquet_path),
+        parquet_path=version.resolved_parquet_path,
         trans_type=payload.type,
         parameters=payload.parameters,
     )

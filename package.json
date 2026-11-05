@@ -1,0 +1,10 @@
+{
+  "name": "bizlens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BizLens - Enterprise BI Platform with DuckDB Analytics and AI Reasoning",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "python app.py"
+  }
+}

@@ -414,7 +414,7 @@ class TransformationService:
                 status_code=409,
             )
 
-        parquet_path = Path(current_version.parquet_path)
+        parquet_path = current_version.resolved_parquet_path
         if not parquet_path.exists():
             raise NotFoundError(f"Parquet source file {parquet_path} does not exist.")
 

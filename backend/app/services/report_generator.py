@@ -194,7 +194,7 @@ class ReportGenerator:
             raise ValidationError("Dataset has no active version for period inspection.")
 
         version = db.query(DatasetVersion).filter(DatasetVersion.id == target_version_id).first()
-        if not version or not version.parquet_path or not Path(version.parquet_path).exists():
+        if not version or not version.parquet_path or not version.resolved_parquet_path.exists():
             raise NotFoundError("Dataset version not found", {"version_id": target_version_id})
 
         mapping_record = db.query(ColumnMapping).filter(ColumnMapping.version_id == version.id).first()
@@ -218,7 +218,7 @@ class ReportGenerator:
         available_regions: List[str] = []
 
         con = duckdb.connect()
-        p_path = str(Path(version.parquet_path).resolve()).replace("\\", "/")
+        p_path = str(version.resolved_parquet_path.resolve()).replace("\\", "/")
 
         try:
             if has_date_column:
@@ -445,7 +445,7 @@ class ReportGenerator:
             .filter(DatasetVersion.id == target_version_id, DatasetVersion.dataset_id == dataset.id)
             .first()
         )
-        if not version or not version.parquet_path or not Path(version.parquet_path).exists():
+        if not version or not version.parquet_path or not version.resolved_parquet_path.exists():
             raise NotFoundError("Dataset version not found", {"version_id": target_version_id})
 
         # 2. Resolve Column Mapping
@@ -472,7 +472,7 @@ class ReportGenerator:
             "gross_margin_pct",
         ]
         kpi_result = analytics_engine.execute_query(
-            parquet_path=Path(version.parquet_path),
+            parquet_path=version.resolved_parquet_path,
             role_to_col=role_to_col,
             metric_ids=metric_ids,
             filters=effective_filters,
@@ -486,7 +486,7 @@ class ReportGenerator:
         breakdown_result = None
         if breakdown_role:
             breakdown_result = analytics_engine.execute_query(
-                parquet_path=Path(version.parquet_path),
+                parquet_path=version.resolved_parquet_path,
                 role_to_col=role_to_col,
                 metric_ids=["total_revenue"],
                 filters=effective_filters,
@@ -501,7 +501,7 @@ class ReportGenerator:
         if "date" in role_to_col:
             try:
                 con = duckdb.connect()
-                p_norm = str(Path(version.parquet_path).resolve()).replace("\\", "/")
+                p_norm = str(version.resolved_parquet_path.resolve()).replace("\\", "/")
                 date_c = role_to_col["date"]
                 rev_c = role_to_col.get("revenue", "1")
 

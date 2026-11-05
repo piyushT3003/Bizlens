@@ -83,4 +83,19 @@ class Settings(BaseSettings):
     FEATURE_FLAGS: str = ""
 
 
+
+def resolve_parquet_path(raw_path: str) -> Path:
+    """Robustly resolves a parquet file path across Windows, Linux, and Vercel Serverless."""
+    if not raw_path:
+        return Path("")
+    p = Path(raw_path)
+    if p.is_absolute() and p.exists():
+        return p
+    norm = str(raw_path).replace("\\", "/")
+    rel = norm.split("storage/", 1)[1] if "storage/" in norm else norm
+    for cand in [Path(settings.STORAGE_ROOT) / rel, BACKEND_DIR / "storage" / rel, BACKEND_DIR / "storage" / "datasets" / rel]:
+        if cand.exists():
+            return cand
+    return Path(settings.STORAGE_ROOT) / rel
+
 settings = Settings()

@@ -221,7 +221,7 @@ class FindingsEngine:
         if not version:
             raise NotFoundError("DatasetVersion", version_id or dataset.active_version_id or "latest")
 
-        parquet_path = Path(version.parquet_path)
+        parquet_path = version.resolved_parquet_path
         if not parquet_path.exists():
             raise NotFoundError("Parquet file", str(parquet_path))
 

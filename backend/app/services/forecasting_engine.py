@@ -104,7 +104,7 @@ class ForecastingEngine:
         if not version:
             raise NotFoundError("DatasetVersion", str(dataset.active_version_id))
 
-        parquet_path = Path(version.parquet_path)
+        parquet_path = version.resolved_parquet_path
         if not parquet_path.exists():
             raise NotFoundError("Parquet file", str(parquet_path))
 

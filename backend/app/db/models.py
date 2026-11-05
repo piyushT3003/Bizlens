@@ -97,6 +97,11 @@ class DatasetVersion(Base, TimestampMixin):
     dataset_id: Mapped[str] = mapped_column(String(36), ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     parquet_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    @property
+    def resolved_parquet_path(self) -> Path:
+        from app.core.config import resolve_parquet_path
+        return resolve_parquet_path(self.parquet_path)
+
     row_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     col_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     parent_version_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)

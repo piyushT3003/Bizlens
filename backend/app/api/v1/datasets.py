@@ -224,10 +224,10 @@ def get_dataset(
     mapping = db.query(ColumnMapping).filter(ColumnMapping.version_id == dataset.active_version_id).first() if active_ver else None
     quality_report = db.query(QualityReport).filter(QualityReport.version_id == dataset.active_version_id).first() if active_ver else None
 
-    if active_ver and not quality_report and Path(active_ver.parquet_path).exists():
+    if active_ver and not quality_report and active_ver.resolved_parquet_path.exists():
         try:
             profile_res = data_profiler.profile_parquet(
-                parquet_path=Path(active_ver.parquet_path),
+                parquet_path=active_ver.resolved_parquet_path,
                 dataset_id=dataset.id,
                 version_number=active_ver.version_number,
             )
@@ -269,12 +269,12 @@ def get_dataset_preview(
         raise NotFoundError("Dataset or active version not found.")
 
     version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.active_version_id).first()
-    if not version or not Path(version.parquet_path).exists():
+    if not version or not version.resolved_parquet_path.exists():
         raise NotFoundError("Parquet data file not found on disk.")
 
     con = duckdb.connect(":memory:")
     try:
-        parquet_posix = Path(version.parquet_path).as_posix()
+        parquet_posix = version.resolved_parquet_path.as_posix()
         columns_res = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{parquet_posix}')").fetchall()
         column_names = [col[0] for col in columns_res]
 
@@ -305,11 +305,11 @@ def get_dataset_profile(
         raise NotFoundError("Dataset or active version not found.")
 
     version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.active_version_id).first()
-    if not version or not Path(version.parquet_path).exists():
+    if not version or not version.resolved_parquet_path.exists():
         raise NotFoundError("Parquet file not found.")
 
     profile_res = data_profiler.profile_parquet(
-        parquet_path=Path(version.parquet_path),
+        parquet_path=version.resolved_parquet_path,
         dataset_id=dataset.id,
         version_number=version.version_number,
     )
