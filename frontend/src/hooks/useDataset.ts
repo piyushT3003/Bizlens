@@ -55,9 +55,9 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     description: "Multichannel retail transactions across North America and Europe.",
     source_filename_sanitized: "retail_q3_enterprise.parquet",
     status: "ready",
-    row_count: 11106,
+    row_count: 10000,
     col_count: 14,
-    quality_score: 94.2,
+    quality_score: 96.2,
     created_at: "2026-09-30T18:00:00Z",
     updated_at: "2026-10-06T12:00:00Z",
     currency_symbol: "₹",
@@ -65,14 +65,14 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     revenue_raw: 11293000,
     gross_profit_formatted: "₹24,50,580",
     gross_margin_pct: 21.7,
-    total_orders: 12480,
+    total_orders: 10000,
     exchange_net: "₹12.48L Net",
     exchange_gross: "₹12.40L Gross",
     exchange_insights: "10+ Insights",
     exchange_features: "109+ Features",
     exchange_kpis: "10 KPIs",
     exchange_solved: "1899+ Solved",
-    map_nodes: 11106,
+    map_nodes: 10000,
     map_clusters: 130,
     map_flows: 1301,
     map_throughput: 1336,
@@ -103,9 +103,9 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     description: "Enterprise compute, AI server acceleration clusters, and networking nodes.",
     source_filename_sanitized: "tech_hardware_datacenter.parquet",
     status: "ready",
-    row_count: 28940,
-    col_count: 18,
-    quality_score: 98.4,
+    row_count: 12000,
+    col_count: 8,
+    quality_score: 97.8,
     created_at: "2026-10-01T08:00:00Z",
     updated_at: "2026-10-06T12:00:00Z",
     currency_symbol: "₹",
@@ -113,14 +113,14 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     revenue_raw: 24850000,
     gross_profit_formatted: "₹84,98,700",
     gross_margin_pct: 34.2,
-    total_orders: 28940,
+    total_orders: 12000,
     exchange_net: "₹24.85L Net",
     exchange_gross: "₹28.10L Gross",
     exchange_insights: "24+ Insights",
     exchange_features: "180+ Features",
     exchange_kpis: "15 KPIs",
     exchange_solved: "3420+ Solved",
-    map_nodes: 24890,
+    map_nodes: 12000,
     map_clusters: 215,
     map_flows: 2840,
     map_throughput: 3120,
@@ -151,9 +151,9 @@ export const PRESET_DATASETS: PresetDatasetMetadata[] = [
     description: "Annual recurring subscriptions, seat expansions, and API consumption telemetry.",
     source_filename_sanitized: "saas_subscriptions_telemetry.parquet",
     status: "ready",
-    row_count: 18450,
-    col_count: 12,
-    quality_score: 96.0,
+    row_count: 5620,
+    col_count: 8,
+    quality_score: 100.0,
     created_at: "2026-09-15T10:00:00Z",
     updated_at: "2026-10-06T12:00:00Z",
     currency_symbol: "₹",
@@ -342,9 +342,13 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
         ];
         set({ datasets: merged, isLoading: false });
 
-        // If no active dataset or current is preset not in server, select first
-        if (!get().activeDataset) {
-          await get().selectDataset(merged[0].id);
+        // Always select target dataset from server so live version ID is active
+        const currentActiveId = get().activeDataset?.id;
+        const targetId = currentActiveId && merged.some((d) => d.id === currentActiveId)
+          ? currentActiveId
+          : merged[0]?.id;
+        if (targetId) {
+          await get().selectDataset(targetId);
         }
       } catch {
         // Safe graceful fallback to preset catalog
@@ -357,71 +361,83 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
 
     selectDataset: async (id: string) => {
       set({ isLoading: true, error: null });
-      // 1. Check if it's one of our presets
       const matchedPreset = PRESET_DATASETS.find((p) => p.id === id);
-      if (matchedPreset) {
-        set({
-          activePreset: matchedPreset,
-          activeDataset: presetToDetail(matchedPreset),
-          isLoading: false,
-        });
-        return;
-      }
 
-      // 2. Otherwise fetch from API
       try {
         const detail = await api.getDataset(id);
-        // Find closest preset or create synthesized preset
-        const customPreset: PresetDatasetMetadata = {
-          id: detail.id,
-          name: detail.name,
-          description: detail.description || "Uploaded enterprise dataset",
-          source_filename_sanitized: detail.source_filename_sanitized,
-          status: detail.status,
-          row_count: detail.row_count,
-          col_count: detail.col_count,
-          quality_score: detail.quality_score || 92.0,
-          created_at: detail.created_at,
-          updated_at: detail.updated_at,
-          currency_symbol: "₹",
-          revenue_formatted: "--",
-          revenue_raw: 0,
-          gross_profit_formatted: "--",
-          gross_margin_pct: 0,
-          total_orders: detail.row_count,
-          exchange_net: `${detail.row_count.toLocaleString()} Records`,
-          exchange_gross: `${detail.row_count.toLocaleString()} Rows`,
-          exchange_insights: `${Math.max(detail.col_count, 5)}+ Inferred Insights`,
-          exchange_features: `${detail.col_count} Columns`,
-          exchange_kpis: `${detail.col_count} Metrics`,
-          exchange_solved: "Lineage Certified",
-          map_nodes: detail.row_count,
-          map_clusters: Math.max(6, Math.round(detail.row_count / 120)),
-          map_flows: Math.max(4, Math.round(detail.row_count * 0.05)),
-          map_throughput: Math.max(10, Math.round(detail.row_count * 0.08)),
-          map_ingestion_stream: `${detail.name} Ingestion`,
-          map_active_clusters: Math.max(4, Math.round(detail.row_count / 150)),
-          categories: [],
-          root_anomaly_title: `${detail.name} Root-Cause Analysis`,
-          root_anomaly_bullets: [
-            `Processed ${detail.row_count.toLocaleString()} certified rows across ${detail.col_count} inferred columns.`,
-            `Overall data quality score confirmed at ${detail.quality_score?.toFixed(1) || "92.0"}%.`,
-            "Deterministic DuckDB lineage verified 0 hallucinated values.",
-          ],
-          findings: [
-            { id: "opt-1", title: "Automated Variance Mitigation", delta: "+₹6.4L", risk: "Low", priority: "high" },
-            { id: "opt-2", title: "Segment Volume Realignment", delta: "+₹4.1L", risk: "Medium", priority: "medium" },
-            { id: "opt-3", title: "Cross-Channel Efficiency Plan", delta: "+₹3.0L", risk: "Low", priority: "low" },
-          ],
-        };
+        let activePreset: PresetDatasetMetadata;
+        if (matchedPreset) {
+          activePreset = {
+            ...matchedPreset,
+            id: detail.id,
+            name: detail.name,
+            row_count: detail.row_count,
+            col_count: detail.col_count,
+            quality_score: detail.quality_score ?? matchedPreset.quality_score,
+            total_orders: detail.row_count,
+            map_nodes: detail.row_count,
+          };
+        } else {
+          activePreset = {
+            id: detail.id,
+            name: detail.name,
+            description: detail.description || "Uploaded enterprise dataset",
+            source_filename_sanitized: detail.source_filename_sanitized,
+            status: detail.status,
+            row_count: detail.row_count,
+            col_count: detail.col_count,
+            quality_score: detail.quality_score || 92.0,
+            created_at: detail.created_at,
+            updated_at: detail.updated_at,
+            currency_symbol: "₹",
+            revenue_formatted: "--",
+            revenue_raw: 0,
+            gross_profit_formatted: "--",
+            gross_margin_pct: 0,
+            total_orders: detail.row_count,
+            exchange_net: `${detail.row_count.toLocaleString()} Records`,
+            exchange_gross: `${detail.row_count.toLocaleString()} Rows`,
+            exchange_insights: `${Math.max(detail.col_count, 5)}+ Inferred Insights`,
+            exchange_features: `${detail.col_count} Columns`,
+            exchange_kpis: `${detail.col_count} Metrics`,
+            exchange_solved: "Lineage Certified",
+            map_nodes: detail.row_count,
+            map_clusters: Math.max(6, Math.round(detail.row_count / 120)),
+            map_flows: Math.max(4, Math.round(detail.row_count * 0.05)),
+            map_throughput: Math.max(10, Math.round(detail.row_count * 0.08)),
+            map_ingestion_stream: `${detail.name} Ingestion`,
+            map_active_clusters: Math.max(4, Math.round(detail.row_count / 150)),
+            categories: [],
+            root_anomaly_title: `${detail.name} Root-Cause Analysis`,
+            root_anomaly_bullets: [
+              `Processed ${detail.row_count.toLocaleString()} certified rows across ${detail.col_count} inferred columns.`,
+              `Overall data quality score confirmed at ${detail.quality_score?.toFixed(1) || "92.0"}%.`,
+              "Deterministic DuckDB lineage verified 0 hallucinated values.",
+            ],
+            findings: [
+              { id: "opt-1", title: "Automated Variance Mitigation", delta: "+₹6.4L", risk: "Low", priority: "high" },
+              { id: "opt-2", title: "Segment Volume Realignment", delta: "+₹4.1L", risk: "Medium", priority: "medium" },
+              { id: "opt-3", title: "Cross-Channel Efficiency Plan", delta: "+₹3.0L", risk: "Low", priority: "low" },
+            ],
+          };
+        }
 
         set({
           activeDataset: detail,
-          activePreset: customPreset,
+          activePreset: activePreset,
           isLoading: false,
         });
       } catch (err: any) {
-        set({ error: err.message, isLoading: false });
+        console.warn(`Failed to fetch dataset ${id} from server; falling back to preset if available`, err);
+        if (matchedPreset) {
+          set({
+            activePreset: matchedPreset,
+            activeDataset: presetToDetail(matchedPreset),
+            isLoading: false,
+          });
+        } else {
+          set({ error: err.message, isLoading: false });
+        }
       }
     },
 
@@ -545,8 +561,13 @@ export const useDatasetStore = create<DatasetState>((set, get) => {
         const detail = await api.getDataset(res.dataset_id);
         const list = await api.getDatasets();
         const history = await api.getTransformationHistory(res.dataset_id);
+        const currentPreset = get().activePreset;
+        const updatedPreset = currentPreset
+          ? { ...currentPreset, quality_score: res.new_quality_score ?? currentPreset.quality_score ?? 100 }
+          : undefined;
         set({
           activeDataset: detail,
+          activePreset: updatedPreset || currentPreset,
           datasets: list,
           transformations: history,
           isLoading: false,

@@ -1,5 +1,4 @@
-"""BizLens Quality & Transformations API: Data Quality Copilot, in-engine DuckDB cleaning, and immutable Parquet versioning."""
-
+import uuid
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from fastapi import APIRouter, Depends, Query, status
@@ -23,6 +22,7 @@ from app.schemas.dataset import (
 )
 from app.services.transformations import transformation_service
 from app.services.quality_copilot import quality_copilot_service
+from app.services.profiler import data_profiler
 
 router = APIRouter(tags=["quality_and_transformations"])
 
@@ -32,8 +32,55 @@ router = APIRouter(tags=["quality_and_transformations"])
 def _get_version_or_404(db: Session, version_id: str) -> DatasetVersion:
     version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
     if not version:
+        # Check if version_id is actually a dataset ID or alias
+        dataset = db.query(Dataset).filter(Dataset.id == version_id).first()
+        if not dataset and "-v" in version_id:
+            ds_prefix = version_id.split("-v")[0]
+            dataset = db.query(Dataset).filter(Dataset.id == ds_prefix).first()
+        if not dataset:
+            dataset = db.query(Dataset).filter(Dataset.name.ilike(f"%{version_id}%")).first()
+        if dataset and dataset.active_version_id:
+            version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.active_version_id).first()
+    if not version:
         raise NotFoundError(f"Dataset version '{version_id}' not found.")
     return version
+
+
+def _get_or_create_quality_report(db: Session, version: DatasetVersion) -> QualityReport:
+    report = db.query(QualityReport).filter(QualityReport.version_id == version.id).first()
+    if not report:
+        parquet_path = Path(version.parquet_path)
+        if parquet_path.exists():
+            try:
+                profile_res = data_profiler.profile_parquet(
+                    parquet_path=parquet_path,
+                    dataset_id=version.dataset_id,
+                    version_number=version.version_number,
+                )
+                report = QualityReport(
+                    id=str(uuid.uuid4()),
+                    version_id=version.id,
+                    score=profile_res.quality_score.score,
+                    components={
+                        "completeness": profile_res.quality_score.completeness,
+                        "consistency": profile_res.quality_score.consistency,
+                        "validity": profile_res.quality_score.validity,
+                        "uniqueness": profile_res.quality_score.uniqueness,
+                        "anomaly_freedom": profile_res.quality_score.anomaly_freedom,
+                    },
+                    issues=profile_res.issues,
+                    formula_version=profile_res.quality_score.formula_version,
+                )
+                db.add(report)
+                version.quality_score = profile_res.quality_score.score
+                db.commit()
+                db.refresh(report)
+                logger.info("Auto-healed quality report for version %s (score: %s%%)", version.id, report.score)
+            except Exception as err:
+                logger.error("Auto-healing quality report failed for %s: %s", version.id, err)
+    if not report:
+        raise NotFoundError(f"Quality report for version '{version.id}' not found.")
+    return report
 
 
 def _get_dataset_or_404(db: Session, dataset_id: str, user_id: str) -> Dataset:
@@ -42,6 +89,8 @@ def _get_dataset_or_404(db: Session, dataset_id: str, user_id: str) -> Dataset:
         .filter(Dataset.id == dataset_id, Dataset.user_id == user_id, Dataset.deleted_at.is_(None))
         .first()
     )
+    if not dataset:
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.deleted_at.is_(None)).first()
     if not dataset:
         raise NotFoundError(f"Dataset '{dataset_id}' not found.")
     return dataset
@@ -57,9 +106,7 @@ def get_version_quality(
 ):
     """Retrieve data quality scorecard and issues for a specific dataset version."""
     version = _get_version_or_404(db, version_id)
-    report = db.query(QualityReport).filter(QualityReport.version_id == version.id).first()
-    if not report:
-        raise NotFoundError(f"Quality report for version '{version_id}' not found.")
+    report = _get_or_create_quality_report(db, version)
 
     comps = report.components or {}
     return QualityReportResponse(
@@ -85,9 +132,7 @@ def get_version_quality_copilot(
 ):
     """Data Quality Copilot analysis with plain-language explanations and recommended transformations."""
     version = _get_version_or_404(db, version_id)
-    report = db.query(QualityReport).filter(QualityReport.version_id == version.id).first()
-    if not report:
-        raise NotFoundError(f"Quality report for version '{version_id}' not found.")
+    report = _get_or_create_quality_report(db, version)
 
     return quality_copilot_service.analyze_quality(
         quality_report=report,
