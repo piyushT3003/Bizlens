@@ -391,46 +391,46 @@ class AnalyticsEngine:
                     valid_metric_ids = [m.id for m in valid_metric_defs]
                     primary_metric = "total_revenue" if "total_revenue" in valid_metric_ids else (valid_metric_ids[0] if valid_metric_ids else None)
 
-                if primary_metric and valid_sql_selects:
-                    order_dir = "ASC" if str(order_direction).upper() == "ASC" else "DESC"
-                    limit_clause = f"LIMIT {int(limit)}" if limit and limit > 0 else ""
-                    dim_query = f"""
-                        SELECT 
-                            "{dim_col}"::VARCHAR AS dim_val,
-                            {', '.join(valid_sql_selects)}
-                        FROM dataset 
-                        {where_sql}
-                        GROUP BY "{dim_col}"
-                        ORDER BY {primary_metric} {order_dir}
-                        {limit_clause}
-                    """
-                    dim_rows = con.execute(dim_query).fetchall()
+                    if primary_metric and valid_sql_selects:
+                        order_dir = "ASC" if str(order_direction).upper() == "ASC" else "DESC"
+                        limit_clause = f"LIMIT {int(limit)}" if limit and limit > 0 else ""
+                        dim_query = f"""
+                            SELECT 
+                                "{dim_col}"::VARCHAR AS dim_val,
+                                {', '.join(valid_sql_selects)}
+                            FROM dataset 
+                            {where_sql}
+                            GROUP BY "{dim_col}"
+                            ORDER BY {primary_metric} {order_dir}
+                            {limit_clause}
+                        """
+                        dim_rows = con.execute(dim_query).fetchall()
 
-                    # Grand total for primary metric for share_pct
-                    grand_total = (
-                        metric_results[primary_metric].value
-                        if (primary_metric in metric_results and metric_results[primary_metric].value)
-                        else 1.0
-                    )
-
-                    breakdown_items = []
-                    for rank, row in enumerate(dim_rows, start=1):
-                        dim_val = row[0] if row[0] is not None else "Unknown"
-                        row_metrics: Dict[str, float] = {}
-                        for idx, m_def in enumerate(valid_metric_defs, start=1):
-                            row_metrics[m_def.id] = round(float(row[idx]), 2) if row[idx] is not None else 0.0
-
-                        prim_val = row_metrics.get(primary_metric, 0.0)
-                        share_pct = round((prim_val / grand_total * 100), 2) if grand_total > 0 else 0.0
-
-                        breakdown_items.append(
-                            BreakdownItem(
-                                dimension_value=dim_val,
-                                metrics=row_metrics,
-                                share_pct=share_pct,
-                                rank=rank,
-                            )
+                        # Grand total for primary metric for share_pct
+                        grand_total = (
+                            metric_results[primary_metric].value
+                            if (primary_metric in metric_results and metric_results[primary_metric].value)
+                            else 1.0
                         )
+
+                        breakdown_items = []
+                        for rank, row in enumerate(dim_rows, start=1):
+                            dim_val = row[0] if row[0] is not None else "Unknown"
+                            row_metrics: Dict[str, float] = {}
+                            for idx, m_def in enumerate(valid_metric_defs, start=1):
+                                row_metrics[m_def.id] = round(float(row[idx]), 2) if row[idx] is not None else 0.0
+
+                            prim_val = row_metrics.get(primary_metric, 0.0)
+                            share_pct = round((prim_val / grand_total * 100), 2) if grand_total > 0 else 0.0
+
+                            breakdown_items.append(
+                                BreakdownItem(
+                                    dimension_value=dim_val,
+                                    metrics=row_metrics,
+                                    share_pct=share_pct,
+                                    rank=rank,
+                                )
+                            )
 
             elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
