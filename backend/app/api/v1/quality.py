@@ -123,10 +123,12 @@ def get_version_quality(
     )
 
 
-@router.post("/versions/{version_id}/quality/copilot", response_model=QualityCopilotResponse)
+@router.api_route("/versions/{version_id}/quality/copilot", methods=["GET", "POST"], response_model=QualityCopilotResponse)
 def get_version_quality_copilot(
     version_id: str,
-    payload: QualityCopilotRequest = QualityCopilotRequest(),
+    focus_column: Optional[str] = Query(None),
+    focus_issue_code: Optional[str] = Query(None),
+    payload: Optional[QualityCopilotRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -134,11 +136,14 @@ def get_version_quality_copilot(
     version = _get_version_or_404(db, version_id)
     report = _get_or_create_quality_report(db, version)
 
+    target_col = (payload.focus_column if payload else None) or focus_column
+    target_code = (payload.focus_issue_code if payload else None) or focus_issue_code
+
     return quality_copilot_service.analyze_quality(
         quality_report=report,
         version=version,
-        focus_column=payload.focus_column,
-        focus_issue_code=payload.focus_issue_code,
+        focus_column=target_col,
+        focus_issue_code=target_code,
     )
 
 
@@ -198,10 +203,12 @@ def get_dataset_active_quality(
     return get_version_quality(dataset.active_version_id, db, current_user)
 
 
-@router.post("/datasets/{dataset_id}/quality/copilot", response_model=QualityCopilotResponse)
+@router.api_route("/datasets/{dataset_id}/quality/copilot", methods=["GET", "POST"], response_model=QualityCopilotResponse)
 def get_dataset_active_quality_copilot(
     dataset_id: str,
-    payload: QualityCopilotRequest = QualityCopilotRequest(),
+    focus_column: Optional[str] = Query(None),
+    focus_issue_code: Optional[str] = Query(None),
+    payload: Optional[QualityCopilotRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -209,7 +216,7 @@ def get_dataset_active_quality_copilot(
     dataset = _get_dataset_or_404(db, dataset_id, current_user.id)
     if not dataset.active_version_id:
         raise NotFoundError("Dataset has no active version.")
-    return get_version_quality_copilot(dataset.active_version_id, payload, db, current_user)
+    return get_version_quality_copilot(dataset.active_version_id, focus_column, focus_issue_code, payload, db, current_user)
 
 
 @router.post("/datasets/{dataset_id}/transform/preview", response_model=TransformationPreviewResponse)

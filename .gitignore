@@ -34,10 +34,12 @@ htmlcov/
 *.env
 
 # Local database and cache storage (Keep sample datasets)
+storage/
 storage/datasets/*
 !storage/datasets/sample*
 storage/cache/
-backend/storage/datasets/*
+backend/storage/
+storage/datasets/*
 !backend/storage/datasets/sample*
 backend/storage/cache/
 *.db-journal

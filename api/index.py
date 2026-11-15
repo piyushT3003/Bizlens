@@ -18,6 +18,9 @@ if is_serverless:
     # 1. Setup writable SQLite database in /tmp
     tmp_db = Path("/tmp/bizlens.db")
     src_db = BACKEND_DIR / "bizlens.db"
+    if not src_db.exists():
+        src_db = ROOT_DIR / "bizlens.db"
+
     if not tmp_db.exists() and src_db.exists():
         try:
             shutil.copy2(src_db, tmp_db)
@@ -27,6 +30,9 @@ if is_serverless:
     # 2. Setup writable storage directory in /tmp
     tmp_storage = Path("/tmp/storage")
     src_storage = BACKEND_DIR / "storage"
+    if not src_storage.exists():
+        src_storage = ROOT_DIR / "storage"
+
     if not tmp_storage.exists() and src_storage.exists():
         try:
             shutil.copytree(src_storage, tmp_storage, dirs_exist_ok=True)
@@ -37,11 +43,5 @@ if is_serverless:
     os.environ["DATABASE_URL"] = f"sqlite:///{tmp_db.as_posix()}"
     os.environ["STORAGE_ROOT"] = str(tmp_storage.resolve())
 
-# Import the FastAPI application
+# Import the FastAPI application - Vercel Python runtime uses `app` natively
 from app.main import app
-
-try:
-    from mangum import Mangum
-    handler = Mangum(app)
-except Exception:
-    handler = app
