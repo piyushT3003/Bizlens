@@ -129,7 +129,8 @@ def get_dataset_findings(
         non_curr_units = [
             "Customers", "Users", "Employees", "Patients", "Accounts",
             "Followers", "Impressions", "Clicks", "Likes", "Shares",
-            "Orders", "Transactions", "Records", "Units"
+            "Orders", "Transactions", "Records", "Performance Index", "Score", "Index",
+            "°C", "Hours", "Days", "Units"
         ]
         for f in findings:
             imp_str = f.evidence.get("impact_formatted", "") or ""

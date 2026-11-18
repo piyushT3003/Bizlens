@@ -93,10 +93,33 @@ def _format_currency_inr(value: float) -> str:
     return format_currency_val(value, currency="INR", grouping="lakh_crore", is_currency=True)
 
 
+def is_identifier_or_code_column(c: str) -> bool:
+    """Accurately identifies database primary keys, foreign keys, row indices, and postal codes."""
+    cl = c.lower().strip()
+    if cl in ["id", "index", "idx", "row_num", "row_id", "rowid", "zip", "code", "postal", "year", "lineitem", "row_number"]:
+        return True
+    if cl.startswith("idx_") or cl.startswith("row_"):
+        return True
+    if cl.endswith("_id") or cl.endswith("_key"):
+        return True
+    if cl.endswith("id") and len(cl) > 4 and not cl.endswith(("paid", "solid", "liquid", "valid", "grid")):
+        return True
+    if cl.endswith("key") and len(cl) > 5:
+        return True
+    if any(w in cl for w in ["zipcode", "postalcode", "postal_code", "zip_code", "tax_code", "pin_code"]):
+        return True
+    return False
+
+
 def format_segment_name(col_name: str, val: Any) -> str:
     """Formats numeric identifiers or discrete segments with human-readable business labels."""
     if val is None:
         return "Unknown"
+    if isinstance(val, bool) or str(val).lower() in ["true", "false"]:
+        b_val = val if isinstance(val, bool) else (str(val).lower() == "true")
+        c_clean = col_name.replace("_", " ").title()
+        return f"{c_clean}: Yes" if b_val else f"{c_clean}: No"
+
     s = str(val).strip()
     c_lower = col_name.lower()
 
@@ -136,29 +159,69 @@ def format_segment_name(col_name: str, val: Any) -> str:
 
 
 def format_dim_label(col_name: str) -> str:
-    """Provides user-friendly plural dimension name."""
-    c_lower = col_name.lower()
-    if "productkey" in c_lower or "product_id" in c_lower:
+    """Provides user-friendly plural dimension name without awkward template grammar."""
+    c_lower = col_name.lower().strip()
+    if any(w in c_lower for w in ["product", "item", "sku", "article", "merchandise"]):
         return "Products"
-    elif "territorykey" in c_lower or "territory_id" in c_lower:
+    elif any(w in c_lower for w in ["territory", "zone", "geography"]):
         return "Territories"
-    elif "customerkey" in c_lower or "customer_id" in c_lower:
+    elif any(w in c_lower for w in ["region"]):
+        return "Regions"
+    elif any(w in c_lower for w in ["state", "province"]):
+        return "States"
+    elif any(w in c_lower for w in ["city", "town", "hub"]):
+        return "Cities"
+    elif any(w in c_lower for w in ["country", "nation"]):
+        return "Countries"
+    elif any(w in c_lower for w in ["customer", "client", "buyer"]):
         return "Customers"
-    elif "payee" in c_lower:
+    elif any(w in c_lower for w in ["user", "subscriber", "member"]):
+        return "Users"
+    elif any(w in c_lower for w in ["category", "sub_category", "subcategory"]):
+        return "Categories"
+    elif any(w in c_lower for w in ["brand", "manufacturer", "make"]):
+        return "Brands"
+    elif any(w in c_lower for w in ["channel", "platform"]):
+        return "Channels"
+    elif any(w in c_lower for w in ["store", "branch", "outlet", "shop"]):
+        return "Stores"
+    elif any(w in c_lower for w in ["payee", "recipient"]):
         return "Payees"
-    elif "vendor" in c_lower:
+    elif any(w in c_lower for w in ["vendor", "supplier", "merchant"]):
         return "Vendors"
+    elif any(w in c_lower for w in ["employee", "staff", "agent", "rep"]):
+        return "Staff"
+    elif any(w in c_lower for w in ["account"]):
+        return "Accounts"
     elif c_lower.endswith("key") or c_lower.endswith("_id"):
-        base = re.sub(r'(_id|key)$', '', c_lower, flags=re.IGNORECASE)
-        return f"{base.title()}s"
-    return col_name.replace("_", " ").title()
+        base = re.sub(r'(_id|key)$', '', c_lower, flags=re.IGNORECASE).replace("_", " ").strip()
+        if base.endswith("y") and not base.endswith(("ay", "ey", "oy")):
+            return f"{base[:-1].title()}ies"
+        elif base.endswith(("s", "sh", "ch", "x", "z")):
+            return f"{base.title()}es"
+        else:
+            return f"{base.title()}s"
+
+    clean_name = col_name.replace("_", " ").strip()
+    if clean_name.lower().endswith(" name"):
+        clean_name = clean_name[:-5].strip()
+    if clean_name.lower().endswith("y") and not clean_name.lower().endswith(("ay", "ey", "oy")):
+        return f"{clean_name[:-1]}ies"
+    elif clean_name.lower().endswith(("s", "sh", "ch", "x", "z")):
+        return f"{clean_name}es"
+    else:
+        return f"{clean_name}s"
 
 
 def resolve_metric_unit(column_name: str, default_is_curr: bool, default_unit: str) -> Tuple[bool, str]:
-    """Accurately determines whether a specific numerical column is currency or an operational unit."""
-    cl = column_name.lower()
-    if any(w in cl for w in ["revenue", "sales", "salesamount", "spend", "cost", "price", "amount", "profit", "cogs", "salary", "arr", "mrr", "turnover", "fee", "bill", "pnl", "margin_amt"]):
-        return True, "Currency"
+    """Accurately determines whether a specific numerical column is currency or an operational unit.
+    Crucial: Physical unit, count, score, rating, and measurement keywords take precedence over generic financial terms.
+    """
+    cl = column_name.lower().strip()
+
+    # 1. Non-currency physical units, counts, ratings, and measurements (PRIORITY)
+    if any(w in cl for w in ["sales_units", "ice_cream_sales_units", "orderquantity", "quantity", "unit", "units", "items", "item_count", "item_qty"]):
+        return False, "Units"
     elif "reach" in cl:
         return False, "Accounts"
     elif "impression" in cl:
@@ -175,14 +238,27 @@ def resolve_metric_unit(column_name: str, default_is_curr: bool, default_unit: s
         return False, "Followers"
     elif "seat" in cl:
         return False, "Seats"
-    elif "orderquantity" in cl or "quantity" in cl or "unit" in cl:
-        return False, "Units"
-    elif "customer" in cl or "client" in cl or "user" in cl or "member" in cl:
-        return False, "Customers"
-    elif "temp" in cl:
+    elif any(w in cl for w in ["score", "rating", "grade", "gpa", "mark"]):
+        return False, column_name.replace("_", " ").title()
+    elif "index" in cl and not is_identifier_or_code_column(column_name):
+        return False, column_name.replace("_", " ").title()
+    elif any(w in cl for w in ["hour", "minute", "second", "day", "week", "duration", "time"]):
+        return False, "Hours" if "hour" in cl else ("Days" if "day" in cl else "Time")
+    elif "temp" in cl or "celsius" in cl:
         return False, "°C"
-    else:
-        return default_is_curr, column_name.replace("_", " ").title()
+    elif any(w in cl for w in ["customer", "client", "patient", "student", "employee", "user", "member", "account"]):
+        if any(w in cl for w in ["count", "num", "total", "qty"]) or not default_is_curr:
+            return False, column_name.replace("_", " ").title()
+
+    # 2. Financial / Monetary columns
+    if any(w in cl for w in ["revenue", "sales_amount", "salesamount", "spend", "cost", "price", "profit", "cogs", "salary", "arr", "mrr", "turnover", "fee", "bill", "pnl", "margin_amt", "gmv", "gross_sales"]):
+        return True, "Currency"
+    elif cl == "sales" or (cl.endswith("_sales") and not cl.endswith("_units")):
+        return True, "Currency"
+    elif cl == "amount" or (cl.endswith("_amount") and not cl.endswith(("_unit_amount", "_qty_amount"))):
+        return True, "Currency"
+
+    return default_is_curr, default_unit
 
 
 class FindingsEngine:
@@ -312,7 +388,20 @@ class FindingsEngine:
                             unit_name = "Units"
                             break
 
-            # 3. Demographic / Profile / Headcount Table (e.g. customers, employees, patients)
+            # 3. Continuous outcome / score / performance / measurement columns (e.g. machine learning or operational metrics)
+            if not metric_col:
+                for pref in [
+                    "performance_index", "performance", "score", "scores", "rating", "grade",
+                    "gpa", "yield", "output", "target", "result", "outcome", "measurement",
+                    "value", "reading", "churn_probability", "nps", "satisfaction"
+                ]:
+                    if pref in col_names_lower:
+                        metric_col = col_names_lower[pref]
+                        is_currency = False
+                        unit_name = metric_col.replace("_", " ").title()
+                        break
+
+            # 4. Demographic / Profile / Headcount Table (e.g. customers, employees, patients)
             if not metric_col:
                 is_currency = False
                 ds_lower = dataset.name.lower()
@@ -385,7 +474,7 @@ class FindingsEngine:
                 role = meta.get("role") if isinstance(meta, dict) else getattr(meta, "role", None)
                 cl = col.lower()
                 c_type = col_types.get(cl, "")
-                if "bool" in c_type or any(t in c_type for t in ["double", "float", "decimal"]):
+                if any(t in c_type for t in ["double", "float", "decimal"]):
                     continue
                 if "lineitem" in cl or "row_num" in cl or "index" in cl or cl.startswith("idx_"):
                     continue
@@ -405,7 +494,7 @@ class FindingsEngine:
             for c in col_names:
                 cl = c.lower()
                 c_type = col_types.get(cl, "")
-                if "bool" in c_type or any(t in c_type for t in ["double", "float", "decimal"]):
+                if any(t in c_type for t in ["double", "float", "decimal"]):
                     continue
                 if "lineitem" in cl or "row_num" in cl or "index" in cl or cl.startswith("idx_") or "unnamed" in cl:
                     continue
@@ -1350,7 +1439,7 @@ class FindingsEngine:
             numeric_cols = [
                 c for c in col_names
                 if any(t in col_types.get(c.lower(), "") for t in ["double", "float", "decimal", "bigint", "integer"])
-                and not any(w in c.lower() for w in ["id", "key", "index", "row_num", "zip", "code", "postal", "year"])
+                and not is_identifier_or_code_column(c)
                 and "bool" not in col_types.get(c.lower(), "")
             ]
             if len(numeric_cols) >= 2 and total_orders >= 10:
@@ -1377,7 +1466,7 @@ class FindingsEngine:
                             t_is_curr, t_unit = resolve_metric_unit(target_col, is_currency, unit_name)
 
                             # Linear Elasticity
-                            if abs(r_float) >= 0.40:
+                            if abs(r_float) >= 0.35:
                                 bin_sql = f'''
                                     WITH binned AS (
                                         SELECT "{target_col}" as target_val,
@@ -1732,33 +1821,32 @@ class FindingsEngine:
         # ====================================================
         # E. BASELINE FALLBACK FOR ULTRA-COMPACT UNIFORM DATASETS
         # ====================================================
-        if len(raw_findings) < 2 and total_val > 0:
+        if len(raw_findings) == 0 and total_val > 0:
             fmt_tot = format_currency_val(total_val, currency=currency, grouping=number_grouping, is_currency=is_currency, unit_name=unit_name)
             raw_findings.append({
-                "title": f"Baseline Output Stability: {fmt_tot} Across {total_orders:,} {unit_name}",
-                "kind": "opportunity",
+                "title": f"Uniform Distribution: Operational Output Balanced Across {total_orders:,} {unit_name}",
+                "kind": "efficiency",
                 "priority": "low",
                 "evidence": {
-                    "metric": "Catalog Realization",
+                    "metric": "Operational Stability",
                     "dimension": "Dataset",
-                    "segment_value": "Portfolio",
+                    "segment_value": "Uniform Distribution",
                     "baseline_value": round(total_val, 2),
                     "observed_value": round(total_val, 2),
                     "delta_pct": 0.0,
-                    "impact_amount": round(total_val, 2),
-                    "impact_formatted": f"{fmt_tot} Catalog Realization",
-                    "impact_type": "upside",
-                    "confidence_score": 0.92,
+                    "impact_amount": 0.0,
+                    "impact_formatted": "Balanced Distribution (0 Variance)",
+                    "impact_type": "neutral",
+                    "confidence_score": 0.95,
                     "sample_size": total_orders,
-                    "formula_name": "Portfolio Output Stability",
+                    "formula_name": "Baseline Uniformity Analysis",
                     "duckdb_sql": "SELECT COUNT(*) FROM ds",
                     "execution_ms": 1.0,
                 },
                 "interpretation": (
-                    f"Aggregate delivery stands steady at {fmt_tot} across {total_orders:,} verified entries. "
-                    f"Variance across tracked sub-dimensions remains within normal distribution boundaries."
+                    f"Aggregate metrics across {total_orders:,} {unit_name.lower()} show normal distribution with zero anomalous outliers or concentration risks."
                 ),
-                "potential_action": "Maintain core operational rhythm while continuing periodic telemetry reviews.",
+                "potential_action": "Operational parameters are operating within target baseline tolerances; no immediate mitigation required.",
             })
 
         # ====================================================

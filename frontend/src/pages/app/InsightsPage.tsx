@@ -165,89 +165,22 @@ export const InsightsPage: React.FC = () => {
         return; // Stale dataset response discarded
       }
 
-      if (res && res.findings && res.findings.length > 0) {
+      if (res) {
         setSummary(res);
         return;
       }
-      throw new Error("No findings from API; using calibrated fallback");
-    } catch {
+      throw new Error("No data returned by analytical engine for this dataset.");
+    } catch (err: any) {
       if (latestDatasetIdRef.current !== dsId) {
         return; // Stale dataset response discarded
       }
-      // Graceful deterministic fallback strictly isolated to target dataset and currency
-      const matchedPreset = PRESET_DATASETS.find((p) => p.id === dsId);
-      const targetDataset = datasets.find((d) => d.id === dsId) || (activeDataset?.id === dsId ? activeDataset : null);
-      const datasetName = matchedPreset?.name || targetDataset?.name || "Active Dataset";
-      const totalRows = targetDataset?.row_count || matchedPreset?.total_orders || 1000;
-      const baseRev = matchedPreset?.revenue_raw || 1000000;
-
-      const fallbackFindings: Finding[] = (matchedPreset?.findings || [
-        { id: "f-1", title: `Category Concentration Exposure in ${datasetName}`, priority: "high" as const },
-        { id: "f-2", title: `High-Margin Expansion Opportunity for ${datasetName}`, priority: "medium" as const },
-        { id: "f-3", title: `Operational Volume Anomaly Cluster`, priority: "medium" as const },
-      ]).map((f, i) => {
-        const impact = Math.round(baseRev * (f.priority === "high" ? 0.075 : 0.04));
-        const formattedDelta = `+${formatCurrencyAmount(impact, activeCurrency, activeGrouping)}`;
-
-        return {
-          id: `${dsId}-${f.id}`,
-          version_id: `${dsId}-v1`,
-          dataset_id: dsId,
-          dataset_name: datasetName,
-          title: f.title,
-          kind: (f.priority === "high" ? "risk" : i % 2 === 0 ? "opportunity" : "efficiency") as any,
-          priority: f.priority,
-          interpretation: `Identified by DuckDB Root Cause Engine for ${datasetName}. Financial impact calculated at ${formattedDelta}.`,
-          potential_action: `Execute optimization roadmap for ${f.title} to realize ${formattedDelta} margin recovery.`,
-          status: (i === 0 ? "applied" : "open") as any,
-          status_history: [
-            {
-              status: i === 0 ? "applied" : "open",
-              timestamp: new Date().toISOString(),
-              user: "Autonomous Intelligence System",
-              note: "Deterministic lineage verified",
-            },
-          ],
-          evidence: {
-            metric: "gross_margin",
-            dimension: "category",
-            impact_amount: impact,
-            impact_formatted: formattedDelta,
-            impact_type: f.priority === "high" ? "risk" : "opportunity",
-            confidence_score: 0.94,
-            sample_size: totalRows,
-            formula_name: "margin_impact",
-            duckdb_sql: `SELECT category, SUM(metric) FROM ds GROUP BY 1 ORDER BY 2 DESC`,
-            execution_ms: 1.2,
-          },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-      });
-
-      const impactAtRisk = Math.round(baseRev * 0.075);
-      const upsidePotential = Math.round(baseRev * 0.115);
-
-      const fallbackSummary: FindingsSummary = {
-        dataset_id: dsId,
-        dataset_name: datasetName,
-        version_id: `${dsId}-v1`,
-        version_number: 1,
-        total_findings: fallbackFindings.length,
-        opportunities_count: fallbackFindings.filter((f) => f.kind === "opportunity").length,
-        risks_count: fallbackFindings.filter((f) => f.kind === "risk").length,
-        efficiencies_count: fallbackFindings.filter((f) => f.kind === "efficiency").length,
-        anomalies_count: fallbackFindings.filter((f) => f.kind === "anomaly").length,
-        high_priority_count: fallbackFindings.filter((f) => f.priority === "high").length,
-        open_count: fallbackFindings.filter((f) => f.status === "open").length,
-        applied_count: fallbackFindings.filter((f) => f.status === "applied").length,
-        total_impact_at_risk: impactAtRisk,
-        total_impact_at_risk_formatted: `+${formatCurrencyAmount(impactAtRisk, activeCurrency, activeGrouping)}`,
-        total_upside_potential: upsidePotential,
-        total_upside_potential_formatted: `+${formatCurrencyAmount(upsidePotential, activeCurrency, activeGrouping)}`,
-        findings: fallbackFindings,
-      };
-      setSummary(fallbackSummary);
+      console.error("[InsightsPage] Error loading findings from analytical engine:", err);
+      setErrorMsg(
+        err?.response?.data?.detail ||
+          err?.message ||
+          "Failed to load business insights from the analytical engine. Please try refreshing."
+      );
+      setSummary(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -348,29 +281,24 @@ export const InsightsPage: React.FC = () => {
     try {
       const res = await api.explainFinding(finding.id);
       setAiExplainModal({ finding, result: res, loading: false });
-    } catch {
-      const fallbackResult: FindingExplainResult = {
+    } catch (err: any) {
+      const errResult: FindingExplainResult = {
         finding_id: finding.id,
         title: finding.title,
         kind: finding.kind,
-        explanation: `Statistical analysis of ${finding.title} for ${finding.dataset_name || "the target dataset"} confirms significant variance impact (${finding.evidence.impact_formatted || "critical"}). DuckDB columnar scanning observed this pattern across ${(finding.evidence.sample_size || 1000).toLocaleString()} records.`,
-        strategic_context: `Telemetry indicates elasticity and variance sensitivity in category "${finding.evidence.dimension || "core"}".`,
-        risk_assessment: `Unit variance observed at ${finding.evidence.impact_formatted || "significant delta"}. Reallocation advised.`,
-        action_steps: [
-          `Commercial: Align price tiers to maintain target contribution margin.`,
-          `Operations: Reallocate inventory to reduce transit surcharge.`,
-          `Finance: Audit quarterly rebate recovery with suppliers.`,
-        ],
+        explanation: `Unable to generate AI strategic deep dive: ${err?.response?.data?.detail || err?.message || "Strategic copilot service is currently unreachable"}. Please retry.`,
+        strategic_context: "AI advisory reasoning service did not complete.",
+        risk_assessment: "Analysis unavailable due to upstream connectivity.",
+        action_steps: ["Please click 'Ask AI to Explain' again to re-query the strategic advisory engine."],
         verified_facts: [
-          `Sample size: ${(finding.evidence.sample_size || 1000).toLocaleString()} verified records`,
-          `Confidence score: ${((finding.evidence.confidence_score || 0.94) * 100).toFixed(1)}%`,
-          `DuckDB query latency: ${finding.evidence.execution_ms || 1.2}ms`,
+          `Target finding: ${finding.title}`,
+          `Evidence impact: ${finding.evidence.impact_formatted || "N/A"}`
         ],
-        guardrail_result: "PASSED (0 Inventions)",
-        model_used: "Deterministic Engine (Verified)",
-        latency_ms: 124,
+        guardrail_result: "ERROR",
+        model_used: "None",
+        latency_ms: 0,
       };
-      setAiExplainModal({ finding, result: fallbackResult, loading: false });
+      setAiExplainModal({ finding, result: errResult, loading: false });
     }
   };
 
