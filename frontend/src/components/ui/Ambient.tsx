@@ -8,7 +8,7 @@ export const AmbientBackground: React.FC<{ intensity?: "subtle" | "strong" }> = 
   intensity = "subtle",
 }) => {
   const shouldReduceMotion = useReducedMotion();
-  const [parallaxOffset, setParallaxOffset] = React.useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (shouldReduceMotion) return;
@@ -17,9 +17,15 @@ export const AmbientBackground: React.FC<{ intensity?: "subtle" | "strong" }> = 
     const handleMouseMove = (e: MouseEvent) => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const x = (e.clientX / window.innerWidth - 0.5) * 36;
-        const y = (e.clientY / window.innerHeight - 0.5) * 36;
-        setParallaxOffset({ x, y });
+        if (!containerRef.current) return;
+        const x = (e.clientX / window.innerWidth - 0.5) * 38;
+        const y = (e.clientY / window.innerHeight - 0.5) * 38;
+        containerRef.current.style.setProperty("--px", `${x.toFixed(1)}px`);
+        containerRef.current.style.setProperty("--py", `${y.toFixed(1)}px`);
+        containerRef.current.style.setProperty("--nx", `${(-x * 1.2).toFixed(1)}px`);
+        containerRef.current.style.setProperty("--ny", `${(-y * 1.2).toFixed(1)}px`);
+        containerRef.current.style.setProperty("--cx", `${e.clientX}px`);
+        containerRef.current.style.setProperty("--cy", `${e.clientY}px`);
       });
     };
 
@@ -31,34 +37,49 @@ export const AmbientBackground: React.FC<{ intensity?: "subtle" | "strong" }> = 
   }, [shouldReduceMotion]);
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+    <div
+      ref={containerRef}
+      className="fixed inset-0 pointer-events-none overflow-hidden z-0"
+      aria-hidden="true"
+    >
       {/* Real-time Three.js WebGL 3D Neural Terrain & Spatial Particles */}
       <QuantumBackground3D intensity={intensity} />
+
+      {/* Interactive Volumetric Pointer Spotlight Field */}
+      <div
+        className="absolute inset-0 transition-opacity duration-500"
+        style={{
+          background:
+            intensity === "strong"
+              ? "radial-gradient(640px circle at var(--cx, 55%) var(--cy, 38%), rgba(255, 130, 35, 0.11), transparent 72%)"
+              : "radial-gradient(560px circle at var(--cx, 55%) var(--cy, 38%), rgba(255, 130, 35, 0.065), transparent 70%)",
+        }}
+      />
 
       {/* Top right orange glow with 3D parallax */}
       <div
         style={{
-          transform: `translate3d(${parallaxOffset.x}px, ${parallaxOffset.y}px, 0)`,
-          transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          transform: "translate3d(var(--px, 0px), var(--py, 0px), 0)",
+          transition: "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         className={cn(
-          "absolute -top-32 -right-32 w-[28rem] h-[28rem] rounded-full blur-[130px] parallax-ambient-1",
+          "absolute -top-32 -right-32 w-[30rem] h-[30rem] rounded-full blur-[130px] parallax-ambient-1",
           intensity === "strong"
-            ? "bg-brand-orange/[0.20]"
-            : "bg-brand-orange/[0.09]"
+            ? "bg-brand-orange/[0.22]"
+            : "bg-brand-orange/[0.10]"
         )}
       />
       {/* Bottom left amber glow with counter parallax */}
       <div
         style={{
-          transform: `translate3d(${-parallaxOffset.x * 1.2}px, ${-parallaxOffset.y * 1.2}px, 0)`,
-          transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          transform: "translate3d(var(--nx, 0px), var(--ny, 0px), 0)",
+          transition: "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         className={cn(
-          "absolute -bottom-32 -left-32 w-[32rem] h-[32rem] rounded-full blur-[150px] parallax-ambient-2",
+          "absolute -bottom-32 -left-32 w-[34rem] h-[34rem] rounded-full blur-[150px] parallax-ambient-2",
           intensity === "strong"
-            ? "bg-brand-amber/[0.14]"
-            : "bg-brand-amber/[0.06]"
+            ? "bg-brand-amber/[0.16]"
+            : "bg-brand-amber/[0.07]"
         )}
       />
     </div>

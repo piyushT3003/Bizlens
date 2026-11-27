@@ -51,6 +51,7 @@ const config: Config = {
       fontFamily: {
         display: ["Space Grotesk", "sans-serif"],
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       boxShadow: {
         glowSm: "var(--glow-sm)",

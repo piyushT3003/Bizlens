@@ -88,7 +88,7 @@ export const HomePage: React.FC = () => {
     <div className="min-h-screen text-text-main flex flex-col justify-between relative overflow-hidden">
       <AmbientBackground intensity="strong" />
       {/* Top Public Sticky Navigation Bar */}
-      <header className="sticky top-0 z-40 border-b border-surface-border bg-surface-base/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-40 border-b border-surface-border/70 bg-surface-base/75 backdrop-blur-2xl gloss-sheen px-6 py-3.5 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-brand-orange text-white flex items-center justify-center shadow-glowSm">
             <Eye className="w-5 h-5" />
@@ -124,31 +124,33 @@ export const HomePage: React.FC = () => {
 
         {/* Left Copy */}
         <div className="flex-1 text-center lg:text-left space-y-6 z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-brand-orange/30 bg-brand-orange/10 text-brand-orange text-xs font-bold tracking-wide">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/35 bg-brand-orange/10 backdrop-blur-md text-brand-orange text-xs font-bold tracking-wide shadow-glowSm">
             <Zap className="w-3.5 h-3.5" />
             <span>Quantum Horizon Ecosystem</span>
           </div>
 
-          <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-text-main leading-tight">
-            Turn Your Data Into <span className="text-brand-orange drop-shadow-sm">Decisions.</span>
+          <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-text-main leading-[1.08] hero-headline-metallic">
+            Turn Your Data Into <span className="text-gradient-luxury">Decisions.</span>
           </h1>
 
           <p className="text-lg text-text-muted max-w-xl font-normal leading-relaxed">
             Analyze. Understand. Decide. A deterministic enterprise intelligence engine paired with guardrailed Gemini AI explanation.
           </p>
 
-          <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-2">
+          <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
             <Button
               variant="primary"
-              size="lg"
+              size="md"
+              className="px-5 py-2.5 text-sm font-semibold whitespace-nowrap"
               onClick={() => navigate("/signup")}
-              icon={<ArrowRight className="w-5 h-5" />}
+              icon={<ArrowRight className="w-4 h-4" />}
             >
               Get Started Free
             </Button>
             <Button
               variant="secondary"
-              size="lg"
+              size="md"
+              className="px-4 py-2.5 text-sm font-semibold whitespace-nowrap"
               onClick={() => navigate("/showcase")}
               icon={<Sparkles className="w-4 h-4 text-brand-orange" />}
             >
@@ -156,7 +158,8 @@ export const HomePage: React.FC = () => {
             </Button>
             <Button
               variant="ghost"
-              size="lg"
+              size="md"
+              className="px-4 py-2.5 text-sm font-semibold whitespace-nowrap border border-surface-border/60 hover:border-brand-orange/40"
               onClick={() => navigate("/demo")}
             >
               Explore Live Demo
@@ -209,7 +212,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Compatibility Badge Strip */}
-      <section className="px-6 py-6 border-y border-surface-border bg-surface-subtle/40">
+      <section className="relative z-10 px-6 py-5 border-y border-surface-border/80 bg-surface-card/45 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-semibold text-text-muted">
           <span className="text-brand-orange font-bold uppercase tracking-wider text-[11px]">Interoperable With</span>
           <span className="flex items-center gap-2">
@@ -231,7 +234,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Feature Cards Grid (Row of 5 Capabilities) */}
-      <section className="px-6 py-16 max-w-7xl mx-auto w-full">
+      <section className="relative z-10 px-6 py-16 max-w-7xl mx-auto w-full">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold uppercase tracking-wider text-brand-orange">Enterprise Capabilities</span>
           <h2 className="text-2xl sm:text-3xl font-display font-bold text-text-main mt-1">
@@ -274,7 +277,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* "How It Works" 3 Steps Section */}
-      <section className="px-6 py-16 max-w-7xl mx-auto w-full border-t border-surface-border">
+      <section className="relative z-10 px-6 py-16 max-w-7xl mx-auto w-full border-t border-surface-border/70">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <span className="text-xs font-bold uppercase tracking-wider text-brand-orange">Architecture in Action</span>
           <h2 className="text-2xl sm:text-3xl font-display font-bold text-text-main mt-1">
@@ -327,7 +330,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-surface-border px-6 py-8 text-xs text-text-muted max-w-7xl mx-auto w-full space-y-4">
+      <footer className="relative z-10 border-t border-surface-border px-6 py-8 text-xs text-text-muted max-w-7xl mx-auto w-full space-y-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-brand-orange text-white flex items-center justify-center">

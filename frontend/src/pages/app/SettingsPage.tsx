@@ -446,7 +446,7 @@ export const SettingsPage: React.FC = () => {
         {/* Right Column: Settings Tabs & Forms (Panel 10) */}
         <div className="lg:col-span-2 space-y-6">
           {/* Tab Navigation */}
-          <div className="flex items-center gap-1.5 border-b border-surface-border pb-2 overflow-x-auto text-xs font-semibold">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-surface-border pb-2.5 text-xs font-semibold">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isSelected = activeTab === tab.id;
@@ -454,13 +454,13 @@ export const SettingsPage: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setSearchParams({ tab: tab.id })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap ${
                     isSelected
-                      ? "bg-brand-orange text-white shadow-glowSm"
+                      ? "bg-brand-orange text-white shadow-glowSm btn-3d-primary"
                       : "text-text-muted hover:text-text-main hover:bg-surface-subtle"
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
                   <span>{tab.label}</span>
                 </button>
               );

@@ -50,7 +50,7 @@ export const CrystalScene: React.FC<CrystalSceneProps> = ({
     try {
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
-      camera.position.set(0, 0.25, 5.2);
+      camera.position.set(0, 0.15, 5.85);
 
       renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -292,7 +292,7 @@ export const CrystalScene: React.FC<CrystalSceneProps> = ({
   return (
     <div
       className={cn("relative flex flex-col items-center justify-center select-none group", className)}
-      style={{ width: size, height: size }}
+      style={{ width: size }}
       onMouseEnter={() => {
         pointerHoverRef.current.active = true;
       }}
@@ -305,31 +305,33 @@ export const CrystalScene: React.FC<CrystalSceneProps> = ({
         pointerHoverRef.current = { active: false, x: 0, y: 0 };
       }}
     >
-      {useWebGL ? (
-        <>
-          {/* Atmospheric Glow Aura behind Crystal */}
-          <div
-            className="absolute rounded-full bg-brand-orange/20 blur-3xl pointer-events-none transition-transform duration-500 group-hover:scale-110"
-            style={{ width: size * 0.58, height: size * 0.58 }}
-          />
-          <div ref={webglContainerRef} className="w-full h-full" />
-          {/* Crisp Floating Monogram Medallion */}
-          <div
-            className="pointer-events-none absolute flex items-center justify-center rounded-full border border-white/30 bg-gradient-to-br from-amber-300/90 via-brand-orange/90 to-orange-900/95 text-white font-display font-bold shadow-glowMd backdrop-blur-md transition-transform duration-300 group-hover:scale-110"
-            style={{
-              width: Math.round(size * 0.22),
-              height: Math.round(size * 0.22),
-              fontSize: Math.round(size * 0.11),
-            }}
-          >
-            {initial}
-          </div>
-        </>
-      ) : (
-        <canvas ref={canvasRef} width={size} height={size} className="w-full h-full" />
-      )}
+      <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+        {useWebGL ? (
+          <>
+            {/* Atmospheric Glow Aura behind Crystal */}
+            <div
+              className="absolute rounded-full bg-brand-orange/20 blur-3xl pointer-events-none transition-transform duration-500 group-hover:scale-110"
+              style={{ width: size * 0.58, height: size * 0.58 }}
+            />
+            <div ref={webglContainerRef} className="w-full h-full" />
+            {/* Crisp Floating Monogram Medallion */}
+            <div
+              className="pointer-events-none absolute flex items-center justify-center rounded-full border border-white/30 bg-gradient-to-br from-amber-300/90 via-brand-orange/90 to-orange-900/95 text-white font-display font-bold shadow-glowMd backdrop-blur-md transition-transform duration-300 group-hover:scale-110"
+              style={{
+                width: Math.round(size * 0.21),
+                height: Math.round(size * 0.21),
+                fontSize: Math.round(size * 0.105),
+              }}
+            >
+              {initial}
+            </div>
+          </>
+        ) : (
+          <canvas ref={canvasRef} width={size} height={size} className="w-full h-full" />
+        )}
+      </div>
 
-      <div className="absolute bottom-2 text-center">
+      <div className="mt-1 px-3 py-1 rounded-full bg-surface-card/90 backdrop-blur-md border border-brand-orange/30 shadow-glowSm text-center z-10">
         <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
           Configuration: <strong className="text-brand-orange">{completionPct}% Complete</strong>
         </span>

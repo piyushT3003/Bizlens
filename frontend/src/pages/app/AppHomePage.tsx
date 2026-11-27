@@ -40,7 +40,7 @@ export const AppHomePage: React.FC = () => {
       positionClass: "left-1/2 top-[calc(50%-var(--orbit-radius))] -translate-x-1/2 -translate-y-1/2",
       icon: TrendingUp,
       iconColor: "text-status-positive",
-      label: `Total Sales (${activePreset.name.split(" ")[0]})`,
+      label: "Total Sales",
       value: formatCurrencyAmount(activePreset.revenue_raw, activeCurrency, activeGrouping),
       badge: "+14.2% MoM",
       badgeColor: "text-status-positive bg-status-positiveBg",
@@ -192,7 +192,7 @@ export const AppHomePage: React.FC = () => {
                       className="group/card text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-orange rounded-xl block"
                       title={`Click to view ${item.label}`}
                     >
-                      <div className="relative p-2.5 sm:p-3 rounded-2xl border border-brand-orange/40 bg-surface-card/90 backdrop-blur-2xl shadow-2xl hover:shadow-glowMd hover:border-brand-orange hover:-translate-y-1 transition-all duration-200 min-w-[130px] sm:min-w-[155px] max-w-[185px] gloss-sheen hover-shimmer-trigger card-3d">
+                      <div className="relative p-2.5 sm:p-3 rounded-2xl border border-brand-orange/40 bg-surface-card/90 backdrop-blur-2xl shadow-2xl hover:shadow-glowMd hover:border-brand-orange hover:-translate-y-1 transition-all duration-200 min-w-[140px] sm:min-w-[185px] max-w-[235px] gloss-sheen hover-shimmer-trigger card-3d">
                         <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5 truncate">
                             <div className="w-5 h-5 rounded-lg bg-surface-subtle border border-surface-border flex items-center justify-center shrink-0">
@@ -233,7 +233,7 @@ export const AppHomePage: React.FC = () => {
 
         {/* Greeting & Active Dataset Subtitle */}
         <div className="relative z-10 space-y-1 max-w-xl mt-2">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-extrabold text-text-main tracking-tight drop-shadow-md">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-extrabold tracking-tight hero-headline-metallic text-gradient-luxury">
             Welcome, {firstName}!
           </h2>
           <p className="text-xs sm:text-sm text-text-muted">

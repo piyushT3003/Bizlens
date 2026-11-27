@@ -1207,6 +1207,77 @@ html[data-theme="light"] .dropdown-solid {
   box-shadow: 0 0 12px #FFFFFF, 0 0 20px #FFB347;
 }
 
+/* ==========================================================================
+   Luxury Metallic Typography & Spatial Refraction Utilities
+   ========================================================================== */
+
+@keyframes luxuryGradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.text-gradient-luxury {
+  background: linear-gradient(
+    110deg,
+    #FFB347 0%,
+    #FF7A1A 28%,
+    #FFF4EA 50%,
+    #FF9A3C 72%,
+    #FFB347 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: luxuryGradientShift 7s ease-in-out infinite;
+  filter: drop-shadow(0 4px 16px rgba(255, 122, 26, 0.28));
+}
+
+html[data-theme="light"] .text-gradient-luxury {
+  background: linear-gradient(
+    110deg,
+    #EA580C 0%,
+    #FF7A1A 32%,
+    #9A3412 50%,
+    #FF7A1A 70%,
+    #EA580C 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(234, 88, 12, 0.18));
+}
+
+.hero-headline-metallic {
+  text-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="light"] .hero-headline-metallic {
+  text-shadow: 0 4px 18px rgba(26, 18, 16, 0.08);
+}
+
+/* Executive Subtle Film Grain Vignette to Eliminate Dark Gradient Banding */
+.luxury-vignette {
+  background: radial-gradient(
+    circle at 50% 45%,
+    transparent 55%,
+    rgba(0, 0, 0, 0.42) 100%
+  );
+}
+
+html[data-theme="light"] .luxury-vignette {
+  background: radial-gradient(
+    circle at 50% 45%,
+    transparent 65%,
+    rgba(241, 220, 203, 0.35) 100%
+  );
+}
+
 
 
 

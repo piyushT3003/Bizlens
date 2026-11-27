@@ -88,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header
       className={cn(
-        "h-16 px-4 lg:px-6 flex items-center justify-between border-b border-surface-border bg-surface-main/80 backdrop-blur-2xl glass-panel sticky top-0 z-50 select-none",
+        "h-16 px-4 lg:px-6 flex items-center justify-between border-b border-surface-border bg-surface-main/80 backdrop-blur-2xl glass-panel gloss-sheen sticky top-0 z-50 select-none",
         className
       )}
     >
