@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import resolve_parquet_path
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import logger
 from app.db.session import get_db
@@ -28,8 +29,10 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 def _map_report_to_summary(report: Report, dataset_name: str) -> ReportSummaryResponse:
     snapshot = report.facts_snapshot or {}
     title = snapshot.get("title") or f"{report.type.replace('_', ' ').title()} Report"
-    has_pdf = bool(report.pdf_path and os.path.exists(report.pdf_path))
-    has_csv = bool(report.csv_path and os.path.exists(report.csv_path))
+    resolved_pdf = resolve_parquet_path(report.pdf_path) if report.pdf_path else None
+    resolved_csv = resolve_parquet_path(report.csv_path) if report.csv_path else None
+    has_pdf = bool(resolved_pdf and resolved_pdf.exists())
+    has_csv = bool(resolved_csv and resolved_csv.exists())
 
     p_type = snapshot.get("period_type") or "all"
     p_start = report.period_start.isoformat() if report.period_start else snapshot.get("period_start")
@@ -282,12 +285,13 @@ def download_report_pdf(
     if not report:
         raise NotFoundError("Report not found", {"report_id": report_id})
 
-    if not report.pdf_path or not os.path.exists(report.pdf_path):
+    resolved_pdf = resolve_parquet_path(report.pdf_path) if report.pdf_path else None
+    if not resolved_pdf or not resolved_pdf.exists():
         raise NotFoundError("PDF Document not found", {"report_id": report_id})
 
     filename = f"BizLens_{report.type}_{report_id[:8]}.pdf"
     return FileResponse(
-        path=report.pdf_path,
+        path=str(resolved_pdf),
         media_type="application/pdf",
         filename=filename,
     )
@@ -308,12 +312,13 @@ def download_report_csv(
     if not report:
         raise NotFoundError("Report not found", {"report_id": report_id})
 
-    if not report.csv_path or not os.path.exists(report.csv_path):
+    resolved_csv = resolve_parquet_path(report.csv_path) if report.csv_path else None
+    if not resolved_csv or not resolved_csv.exists():
         raise NotFoundError("CSV Document not found", {"report_id": report_id})
 
     filename = f"BizLens_{report.type}_{report_id[:8]}.csv"
     return FileResponse(
-        path=report.csv_path,
+        path=str(resolved_csv),
         media_type="text/csv",
         filename=filename,
     )
@@ -336,7 +341,7 @@ def delete_report(
 
     # Delete directory if exists
     if report.pdf_path:
-        report_dir = Path(report.pdf_path).parent
+        report_dir = resolve_parquet_path(report.pdf_path).parent
         if report_dir.exists() and report_dir.is_dir():
             try:
                 shutil.rmtree(report_dir)

@@ -63,9 +63,21 @@ def open_browser(url: str, delay: float = 1.5):
     threading.Thread(target=_open, daemon=True).start()
 
 
+def ensure_frontend_deps():
+    """Install frontend npm dependencies automatically on a fresh clone if missing."""
+    use_shell = os.name == "nt"
+    vite_bin = FRONTEND_DIR / "node_modules" / ".bin" / ("vite.cmd" if os.name == "nt" else "vite")
+    if not vite_bin.exists():
+        print("[BizLens] Installing frontend dependencies (one-time setup)...")
+        res = subprocess.run(["npm", "install"], cwd=str(FRONTEND_DIR), shell=use_shell)
+        if res.returncode != 0:
+            raise RuntimeError("Failed to install frontend dependencies via 'npm install'. Ensure Node.js 18+ and npm are installed.")
+
+
 def run_dev_mode():
     """Concurrently run FastAPI backend (8000) and Vite frontend (5173) with hot reload."""
     ensure_port_free(8000)
+    use_shell = os.name == "nt"
     print("=" * 65)
     print("  BizLens - Autonomous BI Engine [DEVELOPMENT MODE]")
     print("  Backend API:      http://127.0.0.1:8000")
@@ -73,15 +85,11 @@ def run_dev_mode():
     print("  API Docs:         http://127.0.0.1:8000/api/docs")
     print("=" * 65)
 
-    # Check frontend packages
-    vite_bin = FRONTEND_DIR / "node_modules" / ".bin" / ("vite.cmd" if os.name == "nt" else "vite")
-    if not vite_bin.exists():
-        print("[BizLens] Installing frontend dependencies (one-time setup)...")
-        subprocess.run(["npm", "install"], cwd=str(FRONTEND_DIR), shell=True)
+    ensure_frontend_deps()
 
     # Launch Vite in background
     print("[BizLens] Starting Vite Frontend Dev Server...")
-    frontend_proc = subprocess.Popen(["npm", "run", "dev"], cwd=str(FRONTEND_DIR), shell=True)
+    frontend_proc = subprocess.Popen(["npm", "run", "dev"], cwd=str(FRONTEND_DIR), shell=use_shell)
 
     open_browser("http://localhost:5173/", delay=2.0)
 
@@ -102,10 +110,14 @@ def run_dev_mode():
 def run_unified_mode():
     """Run unified full-stack application from FastAPI on port 8000 (serves frontend + backend)."""
     ensure_port_free(8000)
-    # Verify frontend dist exists; if not, build it automatically
+    use_shell = os.name == "nt"
+    # Verify frontend dist exists; if not, install npm deps (if needed) and build automatically
     if not (DIST_DIR / "index.html").exists():
+        ensure_frontend_deps()
         print("[BizLens] Production frontend build not found. Building with Vite...")
-        subprocess.run(["npm", "run", "build"], cwd=str(FRONTEND_DIR), shell=True)
+        res = subprocess.run(["npm", "run", "build"], cwd=str(FRONTEND_DIR), shell=use_shell)
+        if res.returncode != 0:
+            raise RuntimeError("Frontend build failed ('npm run build').")
 
     print("=" * 65)
     print("  BizLens - Enterprise BI Engine & Copilot")
