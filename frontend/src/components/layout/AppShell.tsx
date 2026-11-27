@@ -63,7 +63,7 @@ export const AppShell: React.FC = () => {
           onOpenMobileMenu={() => setMobileDrawerOpen(true)}
         />
 
-        <main className="flex-1 px-4 lg:px-6 pt-1.5 lg:pt-2 pb-5 overflow-y-auto flip-card-stage">
+        <main className="flex-1 px-4 lg:px-6 pt-1.5 lg:pt-2 pb-20 overflow-y-auto flip-card-stage">
           <AnimatePresence mode="wait" initial={false} custom={direction}>
             <PageTransition key={location.pathname} direction={direction}>
               {outletsRef.current[location.pathname] || currentOutlet}

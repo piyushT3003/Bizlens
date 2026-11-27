@@ -11,7 +11,6 @@ export interface QuantumBackground3DProps {
 
 function canUseWebGL(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
-  // Skip in jsdom automated test runners
   if (typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent || "")) {
     return false;
   }
@@ -25,6 +24,44 @@ function canUseWebGL(): boolean {
     return false;
   }
 }
+
+const TERRAIN_VERTEX_SHADER = `
+  varying vec3 vWorldPos;
+  varying float vElevation;
+  void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+    vElevation = worldPos.y;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const TERRAIN_FRAGMENT_SHADER = `
+  uniform vec3 uColorPrimary;
+  uniform vec3 uColorGlow;
+  uniform float uBaseAlpha;
+  uniform float uIsStrong;
+  varying vec3 vWorldPos;
+  varying float vElevation;
+
+  void main() {
+    // Horizon depth fade (dissolves cleanly into infinity)
+    float depthFade = smoothstep(-14.5, -1.5, vWorldPos.z) * smoothstep(9.5, 2.0, vWorldPos.z);
+
+    // Lateral wing vignette
+    float sideFade = 1.0 - smoothstep(6.0, 17.0, abs(vWorldPos.x));
+
+    // Elevate luminescence on wave crests
+    float crestBoost = clamp((vElevation + 3.4) * 0.85, 0.0, 1.0);
+    vec3 col = mix(uColorPrimary, uColorGlow, crestBoost * 0.72);
+
+    // Attenuate wireframe density behind upper-left hero typography for crisp legibility
+    float heroReadZoneFade = mix(1.0, smoothstep(-9.0, 2.5, vWorldPos.x) * 0.78 + 0.22, uIsStrong);
+
+    float alpha = uBaseAlpha * depthFade * sideFade * heroReadZoneFade * (0.65 + crestBoost * 0.75);
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.55));
+  }
+`;
 
 export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
   intensity = "subtle",
@@ -51,9 +88,9 @@ export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
       const height = container.clientHeight || window.innerHeight;
 
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 100);
-      camera.position.set(0, 3.2, 11.5);
-      camera.lookAt(0, -0.8, 0);
+      const camera = new THREE.PerspectiveCamera(52, width / height, 0.1, 100);
+      camera.position.set(0, 3.0, 11.8);
+      camera.lookAt(0, -1.1, 0);
 
       renderer = new THREE.WebGLRenderer({
         alpha: true,
@@ -66,86 +103,92 @@ export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
       container.appendChild(renderer.domElement);
 
       const isLight = theme === "light";
-      const opacityBoost = intensity === "strong" ? 1.55 : 1.0;
+      const isStrong = intensity === "strong";
 
-      // 1. Undulating 3D Perspective Wireframe Neural Terrain
-      const segX = 44;
-      const segZ = 28;
-      const planeGeo = new THREE.PlaneGeometry(34, 22, segX, segZ);
-      planeGeo.rotateX(-Math.PI / 2.25);
+      // 1. Cinema-Grade GLSL Horizon Shader Terrain
+      const segX = 52;
+      const segZ = 34;
+      const planeGeo = new THREE.PlaneGeometry(36, 24, segX, segZ);
+      planeGeo.rotateX(-Math.PI / 2.22);
 
       const basePositions = new Float32Array(planeGeo.attributes.position.array.length);
       basePositions.set(planeGeo.attributes.position.array);
 
-      const wireMat = new THREE.MeshBasicMaterial({
-        color: isLight ? 0xea580c : 0xff7a1a,
+      const wireMat = new THREE.ShaderMaterial({
+        vertexShader: TERRAIN_VERTEX_SHADER,
+        fragmentShader: TERRAIN_FRAGMENT_SHADER,
         wireframe: true,
         transparent: true,
-        opacity: Math.min(0.32, (isLight ? 0.08 : 0.13) * opacityBoost),
+        depthWrite: false,
+        uniforms: {
+          uColorPrimary: { value: new THREE.Color(isLight ? 0xea580c : 0xff7a1a) },
+          uColorGlow: { value: new THREE.Color(isLight ? 0xf59e0b : 0xffb347) },
+          uBaseAlpha: { value: isStrong ? (isLight ? 0.16 : 0.24) : (isLight ? 0.08 : 0.11) },
+          uIsStrong: { value: isStrong ? 1.0 : 0.0 },
+        },
       });
       const terrainMesh = new THREE.Mesh(planeGeo, wireMat);
-      terrainMesh.position.set(0, -3.1, -3.0);
+      terrainMesh.position.set(0, -3.25, -3.2);
       scene.add(terrainMesh);
 
-      // 2. Soft Circular Ember Particle Texture
+      // 2. Soft Radial Bokeh Ember Sprite Texture
       const spriteCanvas = document.createElement("canvas");
       spriteCanvas.width = 64;
       spriteCanvas.height = 64;
       const sCtx = spriteCanvas.getContext("2d");
       if (sCtx) {
-        const g = sCtx.createRadialGradient(32, 32, 2, 32, 32, 30);
-        g.addColorStop(0, "rgba(255, 244, 234, 1)");
-        g.addColorStop(0.28, "rgba(255, 179, 71, 0.85)");
-        g.addColorStop(0.65, "rgba(255, 122, 26, 0.35)");
+        const g = sCtx.createRadialGradient(32, 32, 1, 32, 32, 30);
+        g.addColorStop(0, "rgba(255, 248, 240, 1)");
+        g.addColorStop(0.22, "rgba(255, 179, 71, 0.88)");
+        g.addColorStop(0.6, "rgba(255, 122, 26, 0.30)");
         g.addColorStop(1, "rgba(255, 122, 26, 0)");
         sCtx.fillStyle = g;
         sCtx.fillRect(0, 0, 64, 64);
       }
       const particleTex = new THREE.CanvasTexture(spriteCanvas);
 
-      // 3. 3D Spatial Floating Energy Particles
-      const particleCount = intensity === "strong" ? 110 : 75;
+      // 3. True Z-Depth Volumetric Energy Particles
+      const particleCount = isStrong ? 95 : 60;
       const pGeo = new THREE.BufferGeometry();
       const pPos = new Float32Array(particleCount * 3);
       const pSpeeds = new Float32Array(particleCount);
       for (let i = 0; i < particleCount; i++) {
-        pPos[i * 3] = (Math.random() - 0.5) * 26;
-        pPos[i * 3 + 1] = (Math.random() - 0.3) * 11;
+        pPos[i * 3] = (Math.random() - 0.5) * 28;
+        pPos[i * 3 + 1] = (Math.random() - 0.35) * 11;
         pPos[i * 3 + 2] = (Math.random() - 0.5) * 14 - 2;
-        pSpeeds[i] = 0.25 + Math.random() * 0.55;
+        pSpeeds[i] = 0.22 + Math.random() * 0.55;
       }
       pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
 
       const pMat = new THREE.PointsMaterial({
-        size: intensity === "strong" ? 0.32 : 0.24,
+        size: isStrong ? 0.30 : 0.22,
         map: particleTex,
         transparent: true,
-        opacity: Math.min(0.85, (isLight ? 0.35 : 0.55) * opacityBoost),
+        opacity: isStrong ? (isLight ? 0.45 : 0.68) : (isLight ? 0.25 : 0.40),
         depthWrite: false,
         blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending,
       });
       const particles = new THREE.Points(pGeo, pMat);
       scene.add(particles);
 
-      // 4. Subtle Elevated Orbital Wireframe Ring in Background Depth
-      const ringGeo = new THREE.TorusGeometry(4.8, 0.018, 12, 96);
+      // 4. Delicate Orbital Horizon Arc
+      const ringGeo = new THREE.TorusGeometry(5.2, 0.014, 12, 112);
       const ringMat = new THREE.MeshBasicMaterial({
         color: 0xffb347,
         transparent: true,
-        opacity: Math.min(0.28, (isLight ? 0.08 : 0.14) * opacityBoost),
+        opacity: isStrong ? (isLight ? 0.10 : 0.16) : (isLight ? 0.05 : 0.08),
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.set(4.5, 1.4, -7.5);
-      ring.rotation.x = Math.PI / 2.8;
+      ring.position.set(4.8, 1.5, -8.2);
+      ring.rotation.x = Math.PI / 2.7;
       ring.rotation.y = 0.35;
       scene.add(ring);
 
-      // Pointer parallax tracking
       const targetPointer = { x: 0, y: 0 };
       const currentPointer = { x: 0, y: 0 };
       const onPointerMove = (e: MouseEvent) => {
-        targetPointer.x = (e.clientX / window.innerWidth - 0.5) * 1.4;
-        targetPointer.y = (e.clientY / window.innerHeight - 0.5) * 0.8;
+        targetPointer.x = (e.clientX / window.innerWidth - 0.5) * 1.15;
+        targetPointer.y = (e.clientY / window.innerHeight - 0.5) * 0.65;
       };
       window.addEventListener("mousemove", onPointerMove, { passive: true });
 
@@ -165,14 +208,12 @@ export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
         animId = requestAnimationFrame(animate);
         const t = clock.getElapsedTime();
 
-        // Smooth camera parallax
-        currentPointer.x += (targetPointer.x - currentPointer.x) * 0.04;
-        currentPointer.y += (targetPointer.y - currentPointer.y) * 0.04;
+        currentPointer.x += (targetPointer.x - currentPointer.x) * 0.035;
+        currentPointer.y += (targetPointer.y - currentPointer.y) * 0.035;
         camera.position.x = currentPointer.x;
-        camera.position.y = 3.2 - currentPointer.y;
-        camera.lookAt(0, -0.8, 0);
+        camera.position.y = 3.0 - currentPointer.y;
+        camera.lookAt(0, -1.1, 0);
 
-        // Animate terrain wave vertices
         const posAttr = planeGeo.attributes.position as THREE.BufferAttribute;
         const arr = posAttr.array as Float32Array;
         for (let i = 0; i < arr.length; i += 3) {
@@ -180,24 +221,22 @@ export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
           const bz = basePositions[i + 2];
           arr[i + 1] =
             basePositions[i + 1] +
-            Math.sin(bx * 0.42 + t * 0.9) * 0.42 +
-            Math.cos(bz * 0.38 + t * 0.7) * 0.36;
+            Math.sin(bx * 0.38 + t * 0.78) * 0.44 +
+            Math.cos(bz * 0.34 + t * 0.62) * 0.38;
         }
         posAttr.needsUpdate = true;
 
-        // Drift 3D particles gently upward
         const pArr = pGeo.attributes.position.array as Float32Array;
         for (let i = 0; i < particleCount; i++) {
-          pArr[i * 3 + 1] += 0.0045 * pSpeeds[i];
-          pArr[i * 3] += Math.sin(t * 0.3 + i) * 0.002;
+          pArr[i * 3 + 1] += 0.004 * pSpeeds[i];
+          pArr[i * 3] += Math.sin(t * 0.28 + i) * 0.0018;
           if (pArr[i * 3 + 1] > 7.5) {
-            pArr[i * 3 + 1] = -3.5;
+            pArr[i * 3 + 1] = -3.8;
           }
         }
         pGeo.attributes.position.needsUpdate = true;
 
-        // Slow atmospheric ring spin
-        ring.rotation.z = t * 0.08;
+        ring.rotation.z = t * 0.06;
 
         renderer?.render(scene, camera);
       };
@@ -223,7 +262,6 @@ export const QuantumBackground3D: React.FC<QuantumBackground3DProps> = ({
         }
       };
     } catch {
-      // Fail safely if GPU context unavailable
       return undefined;
     }
   }, [intensity, shouldReduceMotion, theme]);

@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AICore } from "@/components/visuals/AICore";
-import { AmbientBackground, ParticleField } from "@/components/ui/Ambient";
+import { AmbientBackground } from "@/components/ui/Ambient";
 import { Button } from "@/components/ui/Button";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { GlowBorder } from "@/components/ui/GlowBorder";
@@ -119,8 +119,7 @@ export const HomePage: React.FC = () => {
       </header>
 
       {/* Hero Section (Replicating Master Image Panel 2: Intelligence Exchange) */}
-      <section className="relative px-6 py-16 lg:py-24 max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-12 w-full">
-        <ParticleField count={30} />
+      <section className="relative z-10 px-6 py-16 lg:py-24 max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-12 w-full">
 
         {/* Left Copy */}
         <div className="flex-1 text-center lg:text-left space-y-6 z-10">

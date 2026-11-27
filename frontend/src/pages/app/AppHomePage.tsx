@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { AICore } from "@/components/visuals/AICore";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
-import { ParticleField } from "@/components/ui/Ambient";
 import {
   Upload,
   LayoutDashboard,
@@ -111,10 +110,6 @@ export const AppHomePage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-3.5 lg:gap-4 relative w-full">
-      <div className="absolute inset-0 pointer-events-none -z-10" aria-hidden="true">
-        <ParticleField count={20} />
-      </div>
-
       {/* Hero Showcase Area: Majestic 3D Globe with Circular Orbit */}
       <div className="relative rounded-2xl sm:rounded-3xl border border-brand-orange/35 bg-gradient-to-b from-surface-card/80 via-surface-card/55 to-surface-card/85 p-4 sm:p-5 lg:p-6 overflow-hidden shadow-2xl flex flex-col items-center justify-center text-center glass-card-premium gloss-sheen w-full">
         {/* Ambient Radial Lighting & 3D Shimmer */}

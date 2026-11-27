@@ -174,7 +174,7 @@ export const WaterfallChart: React.FC<WaterfallChartProps> = ({
                   />
                 )}
 
-                {/* Step Bar */}
+                {/* Step Bar with Top Specular Rim */}
                 <rect
                   x={x}
                   y={barY}
@@ -190,6 +190,16 @@ export const WaterfallChart: React.FC<WaterfallChartProps> = ({
                       ? "filter brightness-125 stroke-2 stroke-white/50"
                       : ""
                   )}
+                />
+                <rect
+                  x={x + 2}
+                  y={barY + 1}
+                  width={Math.max(0, barWidth - 4)}
+                  height={Math.min(3, barH * 0.2)}
+                  rx="2"
+                  fill="white"
+                  fillOpacity="0.28"
+                  className="pointer-events-none"
                 />
 
                 {/* Top Delta / Value Label */}
@@ -207,18 +217,27 @@ export const WaterfallChart: React.FC<WaterfallChartProps> = ({
                     : `${step.delta_value >= 0 ? "+" : ""}${step.delta_formatted}`}
                 </text>
 
-                {/* Step Name X-Axis Label */}
-                <text
-                  x={x + barWidth / 2}
-                  y={chartBottom + 18}
-                  textAnchor="middle"
-                  className={cn(
-                    "text-[10px] font-semibold fill-current transition-colors",
-                    isSelected ? "fill-brand-orange font-bold" : "fill-text-muted"
-                  )}
-                >
-                  {step.label.length > 13 ? `${step.label.slice(0, 12)}…` : step.label}
-                </text>
+                {/* Step Name X-Axis Label (Crisp 2-line SVG wrap) */}
+                {(() => {
+                  const words = step.label.split(/\s+/);
+                  const mid = Math.ceil(words.length / 2);
+                  const line1 = words.length > 1 ? words.slice(0, mid).join(" ") : step.label;
+                  const line2 = words.length > 1 ? words.slice(mid).join(" ") : "";
+                  return (
+                    <text
+                      x={x + barWidth / 2}
+                      y={chartBottom + 15}
+                      textAnchor="middle"
+                      className={cn(
+                        "text-[10px] font-semibold fill-current transition-colors",
+                        isSelected ? "fill-brand-orange font-bold" : "fill-text-muted"
+                      )}
+                    >
+                      <tspan x={x + barWidth / 2} dy="0">{line1}</tspan>
+                      {line2 && <tspan x={x + barWidth / 2} dy="11">{line2}</tspan>}
+                    </text>
+                  );
+                })()}
               </g>
             );
           })}

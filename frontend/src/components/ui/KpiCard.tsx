@@ -96,10 +96,15 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       slide="up"
       stagger={stagger}
       className={cn(
-        "p-5 flex flex-col justify-between min-h-[148px] h-full transition-all card-3d",
-        onClick && "cursor-pointer group"
+        "p-5 flex flex-col justify-between min-h-[148px] h-full transition-all card-3d group",
+        onClick && "cursor-pointer"
       )}
     >
+      {/* Top Specular Luminous Edge Accent */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-0 inset-x-5 h-[1.5px] bg-gradient-to-r from-transparent via-brand-orange/40 to-transparent group-hover:via-brand-amber/85 transition-all duration-300"
+      />
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-text-muted group-hover:text-brand-orange transition-colors">
           {displayTitle}
@@ -110,7 +115,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       </div>
 
       <div className="mt-3">
-        <span className="text-2xl lg:text-3xl font-bold tracking-tight text-text-main tabular-nums">
+        <span className="font-display text-2xl lg:text-3xl font-bold tracking-tight text-text-main tabular-nums">
           {displayValue}
         </span>
       </div>

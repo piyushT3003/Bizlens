@@ -1686,12 +1686,12 @@ export const DashboardPage: React.FC = () => {
                               <span
                                 className={cn(
                                   cylinderStyle.labelFontSize,
-                                  "font-semibold block transition-colors truncate max-w-full",
+                                  "font-semibold block transition-colors whitespace-nowrap",
                                   isSelected ? "text-brand-orange font-bold" : "text-text-muted group-hover:text-text-main"
                                 )}
                                 title={item.m}
                               >
-                                {item.m}
+                                {item.m.replace(" (Projected)", "*").replace(" (Est.)", "*")}
                               </span>
                               {cylinderStyle.showBottomValues && (
                                 <span className={cn(cylinderStyle.valFontSize, "font-mono font-bold text-text-main group-hover:text-brand-orange transition-colors truncate block")}>
