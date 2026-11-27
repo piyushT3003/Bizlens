@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # AI & Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     GEMINI_TIMEOUT_S: int = 30
     GEMINI_DAILY_TOKEN_BUDGET: int = 1000000
     AI_CACHE_TTL_S: int = 86400

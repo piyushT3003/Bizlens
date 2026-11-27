@@ -484,11 +484,18 @@ class AIOrchestrator:
         if any(w in q_lower for w in ("key performance indicator", "key performance indicators", "kpis", "kpi", "core metrics")):
             return "get_kpis", ["total_revenue", "total_orders", "gross_profit", "gross_margin_pct"], None, None, "DESC", None
 
+        # Word-boundary helper so substrings like "min" in "performing" never misfire
+        def _has_term(text: str, terms: tuple) -> bool:
+            return any(re.search(rf"\b{re.escape(t)}\b", text) for t in terms)
+
+        # Normalize "product category / categories" so it routes to Category instead of SKU/Product
+        q_entity = re.sub(r"\bproduct\s+categor(?:y|ies)\b", "category", q_lower)
+
         # Dimension checks pre-computation
-        is_product = any(w in q_lower for w in ("product", "products", "item", "items", "sku", "skus", "merchandise", "goods", "title", "model", "article"))
-        is_customer = any(w in q_lower for w in ("customer", "customers", "client", "clients", "buyer", "buyers", "account", "accounts", "consumer", "consumers"))
-        is_category = any(w in q_lower for w in ("category", "categories", "department", "dept", "sub-category", "subcategory", "segment", "division", "vertical"))
-        is_region = any(w in q_lower for w in ("region", "regions", "state", "states", "city", "cities", "geography", "location", "territory", "zone", "province", "country")) or any(m in q_lower for m in ("bangalore", "bengaluru", "mumbai", "delhi", "chennai", "kolkata", "hyderabad", "pune", "ahmedabad", "jaipur"))
+        is_product = _has_term(q_entity, ("product", "products", "item", "items", "sku", "skus", "merchandise", "goods", "title", "model", "article"))
+        is_customer = _has_term(q_entity, ("customer", "customers", "client", "clients", "buyer", "buyers", "account", "accounts", "consumer", "consumers"))
+        is_category = _has_term(q_lower, ("category", "categories", "department", "dept", "sub-category", "subcategory", "segment", "division", "vertical"))
+        is_region = _has_term(q_lower, ("region", "regions", "state", "states", "city", "cities", "geography", "location", "territory", "zone", "province", "country", "bangalore", "bengaluru", "mumbai", "delhi", "chennai", "kolkata", "hyderabad", "pune", "ahmedabad", "jaipur"))
 
         has_breakdown_keyword = (
             any(w in q_lower for w in (
@@ -526,11 +533,11 @@ class AIOrchestrator:
         # 7. Entity & Dimension Detection (Rankings & Breakdowns)
         # -------------------------------------------------------------
         # Identify order direction (Lowest vs Highest)
-        is_lowest = any(w in q_lower for w in (
+        is_lowest = _has_term(q_lower, (
             "lowest", "least", "bottom", "worst", "minimum", "min", "underperforming",
             "slowest", "cheapest", "smallest", "tail", "laggard", "poorest", "slow-moving"
         ))
-        is_highest = any(w in q_lower for w in (
+        is_highest = _has_term(q_lower, (
             "top", "best", "highest", "leading", "most", "maximum", "max",
             "peak", "biggest", "dominant", "greatest", "star", "primary", "fastest"
         ))
@@ -567,10 +574,10 @@ class AIOrchestrator:
             return None
 
         # Dimension checks
-        is_product = any(w in q_lower for w in ("product", "products", "item", "items", "sku", "skus", "merchandise", "goods", "title", "model", "article"))
-        is_customer = any(w in q_lower for w in ("customer", "customers", "client", "clients", "buyer", "buyers", "account", "accounts", "consumer", "consumers"))
-        is_category = any(w in q_lower for w in ("category", "categories", "department", "dept", "sub-category", "subcategory", "segment", "division", "vertical"))
-        is_region = any(w in q_lower for w in ("region", "regions", "state", "states", "city", "cities", "geography", "location", "territory", "zone", "province", "country")) or any(m in q_lower for m in ("bangalore", "bengaluru", "mumbai", "delhi", "chennai", "kolkata", "hyderabad", "pune", "ahmedabad", "jaipur"))
+        is_product = _has_term(q_entity, ("product", "products", "item", "items", "sku", "skus", "merchandise", "goods", "title", "model", "article"))
+        is_customer = _has_term(q_entity, ("customer", "customers", "client", "clients", "buyer", "buyers", "account", "accounts", "consumer", "consumers"))
+        is_category = _has_term(q_lower, ("category", "categories", "department", "dept", "sub-category", "subcategory", "segment", "division", "vertical"))
+        is_region = _has_term(q_lower, ("region", "regions", "state", "states", "city", "cities", "geography", "location", "territory", "zone", "province", "country", "bangalore", "bengaluru", "mumbai", "delhi", "chennai", "kolkata", "hyderabad", "pune", "ahmedabad", "jaipur"))
 
         target_dim: Optional[str] = None
         unavailable_note: Optional[str] = None
@@ -724,7 +731,15 @@ class AIOrchestrator:
         if query_res.breakdown:
             top_b = query_res.breakdown[0]
             prefix = "Lowest Performing Segment" if order_direction == "ASC" else "Leading Segment"
-            fact_lines.append(f"• {prefix} (#{top_b.rank} {top_b.dimension_value}): {top_b.share_pct}% share of total volume")
+            for idx, item in enumerate(query_res.breakdown[:5]):
+                seg_label = prefix if idx == 0 else "Ranked Segment"
+                rev_val = item.metrics.get("total_revenue")
+                rev_str = ""
+                if rev_val is not None:
+                    m_def = metric_registry.get_metric("total_revenue")
+                    fmt = format_metric_value(rev_val, m_def.unit if m_def else "currency", m_def.format_str if m_def else "₹#,##0.00")
+                    rev_str = f" ({fmt})"
+                fact_lines.append(f"• {seg_label} (#{item.rank} {item.dimension_value}){rev_str}: {item.share_pct}% share of total volume")
 
         blocks.append(
             ChatMessageBlock(
@@ -911,10 +926,18 @@ class AIOrchestrator:
 
         is_ranking_query = bool(group_by_role and query_res.breakdown and (
             order_direction == "ASC" or limit is not None or operation == "top_n"
-            or any(w in query.lower() for w in ("lowest", "least", "bottom", "worst", "top", "best", "highest", "most", "rank"))
+            or any(re.search(rf"\b{w}\b", query.lower()) for w in ("lowest", "least", "bottom", "worst", "top", "best", "highest", "most", "rank"))
         ))
 
         if is_ranking_query:
+            # Ground computed KPI values/deltas in fact_values so deterministic fallback always passes guardrail
+            for m_res in query_res.metrics.values():
+                if m_res.is_available and m_res.value is not None:
+                    fact_values.append(m_res.value)
+                    if m_res.value >= 100_000:
+                        fact_values.extend([round(m_res.value / 100_000.0, 2), round(m_res.value / 10_000_000.0, 2)])
+                    if m_res.delta_pct is not None:
+                        fact_values.append(m_res.delta_pct)
             # 1. Primary facts: each ranked breakdown item
             for b in query_res.breakdown:
                 fact_values.append(b.share_pct)
