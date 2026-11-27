@@ -369,16 +369,45 @@ export const AICore: React.FC<AICoreProps> = ({
     };
   }, [mode, size, shouldReduceMotion, isExchange]);
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (shouldReduceMotion || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const nx = (e.clientX - rect.left) / rect.width - 0.5;
+    const ny = (e.clientY - rect.top) / rect.height - 0.5;
+    containerRef.current.style.setProperty("--globe-rx", `${(-ny * 10).toFixed(2)}deg`);
+    containerRef.current.style.setProperty("--globe-ry", `${(nx * 10).toFixed(2)}deg`);
+  };
+
+  const handleMouseLeave = () => {
+    if (!containerRef.current) return;
+    containerRef.current.style.setProperty("--globe-rx", "0deg");
+    containerRef.current.style.setProperty("--globe-ry", "0deg");
+  };
+
   return (
     <div
-      className={cn("relative flex items-center justify-center select-none", className)}
-      style={{ width: isExchange ? Math.max(size, 460) : size, height: size }}
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className={cn(
+        "relative flex items-center justify-center select-none transition-transform duration-300 ease-out",
+        className
+      )}
+      style={{
+        width: isExchange ? Math.max(size, 460) : size,
+        height: size,
+        transform: "perspective(1100px) rotateX(var(--globe-rx, 0deg)) rotateY(var(--globe-ry, 0deg))",
+        transformStyle: "preserve-3d",
+      }}
       role="img"
       aria-label="BizLens 3D Intelligence Globe Core"
     >
       <canvas
         ref={canvasRef}
-        className="w-full h-full drop-shadow-[0_20px_50px_rgba(255,122,26,0.22)]"
+        className="w-full h-full drop-shadow-[0_24px_60px_rgba(255,122,26,0.32)]"
+        style={{ transform: "translateZ(20px)" }}
       />
 
       {/* Center Welcome Monogram & Text Overlay for Exchange/Welcome Modes */}

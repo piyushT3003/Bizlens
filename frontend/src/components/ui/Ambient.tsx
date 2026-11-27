@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "framer-motion";
 import { brandTokens } from "@/design/tokens";
+import { QuantumBackground3D } from "@/components/visuals/QuantumBackground3D";
 
 export const AmbientBackground: React.FC<{ intensity?: "subtle" | "strong" }> = ({
   intensity = "subtle",
@@ -30,7 +31,10 @@ export const AmbientBackground: React.FC<{ intensity?: "subtle" | "strong" }> = 
   }, [shouldReduceMotion]);
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10" aria-hidden="true">
+    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+      {/* Real-time Three.js WebGL 3D Neural Terrain & Spatial Particles */}
+      <QuantumBackground3D intensity={intensity} />
+
       {/* Top right orange glow with 3D parallax */}
       <div
         style={{

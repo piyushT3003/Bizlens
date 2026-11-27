@@ -14,13 +14,21 @@ export const GlowBorder: React.FC<GlowBorderProps> = ({
   return (
     <div
       className={cn(
-        "relative rounded-2xl p-[1px] overflow-hidden transition-all duration-300",
-        active ? "bg-gradient-to-r from-brand-orange via-brand-amber to-brand-orange shadow-glowSm" : "bg-surface-border hover:bg-surface-borderHover",
+        "relative rounded-2xl p-[1.5px] overflow-hidden transition-all duration-300",
+        active
+          ? "glow-border-3d shadow-glowMd"
+          : "bg-surface-border hover:bg-surface-borderHover",
         className
       )}
       {...props}
     >
-      <div className="relative rounded-[15px] bg-surface-main h-full w-full">
+      {active && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-[100%] glow-border-spinner opacity-85"
+        />
+      )}
+      <div className="relative rounded-[14.5px] bg-surface-main h-full w-full z-[1]">
         {children}
       </div>
     </div>

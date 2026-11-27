@@ -20,7 +20,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   hoverLift = false,
   slide = "none",
   stagger,
-  tilt = false,
+  tilt,
   hoverGlow = false,
   shimmer = true,
   entrance = "none",
@@ -30,27 +30,42 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   style,
   ...props
 }) => {
-  const [spotlightStyle, setSpotlightStyle] = React.useState<React.CSSProperties>({});
   const cardRef = React.useRef<HTMLDivElement | null>(null);
+  const enableTilt = tilt ?? (hoverLift || variant === "showcase" || variant === "interactive");
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (onMouseMove) onMouseMove(e);
-    if (!tilt || !cardRef.current) return;
+    if (!enableTilt || !cardRef.current) return;
+
+    const isMotionOff =
+      typeof document !== "undefined" &&
+      document.documentElement.getAttribute("data-motion") === "off";
+    if (isMotionOff) return;
 
     const rect = cardRef.current.getBoundingClientRect();
-    const x = Math.round(e.clientX - rect.left);
-    const y = Math.round(e.clientY - rect.top);
+    if (!rect.width || !rect.height) return;
 
-    // Ultra-crisp interactive ambient specular spotlight without 3D texture rotation
-    setSpotlightStyle({
-      backgroundImage: `radial-gradient(350px circle at ${x}px ${y}px, rgba(255, 122, 26, 0.08), transparent 75%)`,
-    });
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+
+    const rx = (0.5 - py) * 5.2; // subtle ±2.6 deg pitch
+    const ry = (px - 0.5) * 5.6; // subtle ±2.8 deg yaw
+    const gx = Math.round(e.clientX - rect.left);
+    const gy = Math.round(e.clientY - rect.top);
+
+    cardRef.current.style.setProperty("--card-rx", `${rx.toFixed(2)}deg`);
+    cardRef.current.style.setProperty("--card-ry", `${ry.toFixed(2)}deg`);
+    cardRef.current.style.setProperty("--glare-x", `${gx}px`);
+    cardRef.current.style.setProperty("--glare-y", `${gy}px`);
+    cardRef.current.style.setProperty("--glare-op", "1");
   };
 
   const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
     if (onMouseLeave) onMouseLeave(e);
-    if (!tilt) return;
-    setSpotlightStyle({});
+    if (!enableTilt || !cardRef.current) return;
+    cardRef.current.style.setProperty("--card-rx", "0deg");
+    cardRef.current.style.setProperty("--card-ry", "0deg");
+    cardRef.current.style.setProperty("--glare-op", "0");
   };
 
   const slideClass =
@@ -80,18 +95,21 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       ref={cardRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      style={{ ...spotlightStyle, ...style }}
+      style={style}
       className={cn(
         "relative rounded-2xl border overflow-hidden transition-all duration-300 ease-out gloss-sheen",
-        // Deep frosted glass tokens
         "bg-surface-card border-surface-border text-text-main",
-        // Frosted glass backdrop blur & 3D rim highlight
         "backdrop-blur-xl shadow-md",
+        enableTilt && "card-3d-interactive",
         shimmer && "hover-shimmer-trigger",
-        (glow || hoverGlow) && "shadow-glowSm hover:shadow-glowMd border-brand-orange/40 hover-glow-ambient",
-        hoverLift && "card-3d cursor-pointer hover:border-surface-borderHover active:translate-y-[1px] micro-press",
-        variant === "showcase" && "border-brand-orange/45 bg-gradient-to-b from-brand-orange/[0.12] to-transparent shadow-glowSm card-3d hover-glow-ambient",
-        variant === "interactive" && "card-3d cursor-pointer hover:border-brand-orange/50 active:translate-y-[1px] micro-press hover-glow-ambient",
+        (glow || hoverGlow) &&
+          "shadow-glowSm hover:shadow-glowMd border-brand-orange/40 hover-glow-ambient",
+        hoverLift &&
+          "card-3d cursor-pointer hover:border-surface-borderHover active:translate-y-[1px] micro-press",
+        variant === "showcase" &&
+          "border-brand-orange/45 bg-gradient-to-b from-brand-orange/[0.12] to-transparent shadow-glowSm card-3d hover-glow-ambient",
+        variant === "interactive" &&
+          "card-3d cursor-pointer hover:border-brand-orange/50 active:translate-y-[1px] micro-press hover-glow-ambient",
         slideClass,
         entranceClass,
         staggerClass,
@@ -99,8 +117,19 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       )}
       {...props}
     >
+      {/* Dynamic Cursor Specular Glare Overlay */}
+      {enableTilt && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-[inherit] transition-opacity duration-300 z-[1]"
+          style={{
+            opacity: "var(--glare-op, 0)",
+            background:
+              "radial-gradient(380px circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(255, 160, 75, 0.14), rgba(255, 122, 26, 0.04) 45%, transparent 75%)",
+          }}
+        />
+      )}
       {children}
     </div>
   );
 };
-

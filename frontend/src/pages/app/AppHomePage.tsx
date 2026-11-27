@@ -116,7 +116,7 @@ export const AppHomePage: React.FC = () => {
       </div>
 
       {/* Hero Showcase Area: Majestic 3D Globe with Circular Orbit */}
-      <div className="relative rounded-2xl sm:rounded-3xl border border-brand-orange/30 bg-gradient-to-b from-[#0E0B09] via-surface-card/70 to-[#0E0B09] p-4 sm:p-5 lg:p-6 overflow-hidden shadow-2xl flex flex-col items-center justify-center text-center glass-card-premium w-full">
+      <div className="relative rounded-2xl sm:rounded-3xl border border-brand-orange/35 bg-gradient-to-b from-surface-card/80 via-surface-card/55 to-surface-card/85 p-4 sm:p-5 lg:p-6 overflow-hidden shadow-2xl flex flex-col items-center justify-center text-center glass-card-premium gloss-sheen w-full">
         {/* Ambient Radial Lighting & 3D Shimmer */}
         <div className="absolute inset-0 bg-radial-gradient from-brand-orange/[0.14] via-transparent to-transparent pointer-events-none" />
         <div className="absolute top-0 left-1/4 w-80 h-80 bg-brand-orange/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -192,7 +192,7 @@ export const AppHomePage: React.FC = () => {
                       className="group/card text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-orange rounded-xl block"
                       title={`Click to view ${item.label}`}
                     >
-                      <div className="relative p-2.5 sm:p-3 rounded-2xl border border-brand-orange/35 bg-[#0E0B09]/92 backdrop-blur-2xl shadow-2xl hover:shadow-glowMd hover:border-brand-orange hover:-translate-y-1 transition-all duration-200 min-w-[130px] sm:min-w-[155px] max-w-[185px]">
+                      <div className="relative p-2.5 sm:p-3 rounded-2xl border border-brand-orange/40 bg-surface-card/90 backdrop-blur-2xl shadow-2xl hover:shadow-glowMd hover:border-brand-orange hover:-translate-y-1 transition-all duration-200 min-w-[130px] sm:min-w-[155px] max-w-[185px] gloss-sheen hover-shimmer-trigger card-3d">
                         <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5 truncate">
                             <div className="w-5 h-5 rounded-lg bg-surface-subtle border border-surface-border flex items-center justify-center shrink-0">

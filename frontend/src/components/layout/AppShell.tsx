@@ -39,11 +39,11 @@ export const AppShell: React.FC = () => {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen flex bg-surface-base text-text-main relative">
+    <div className="min-h-screen flex text-text-main relative">
       <AmbientBackground intensity="subtle" />
 
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block shrink-0">
+      <div className="hidden lg:block shrink-0 relative z-20">
         <Sidebar
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((c) => !c)}
@@ -57,7 +57,7 @@ export const AppShell: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 pb-16 lg:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-16 lg:pb-0 relative z-10">
         <TopBar
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           onOpenMobileMenu={() => setMobileDrawerOpen(true)}

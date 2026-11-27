@@ -1,9 +1,10 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AICore } from "@/components/visuals/AICore";
-import { ParticleField } from "@/components/ui/Ambient";
+import { AmbientBackground, ParticleField } from "@/components/ui/Ambient";
 import { Button } from "@/components/ui/Button";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { GlowBorder } from "@/components/ui/GlowBorder";
 import {
   Eye,
   ArrowRight,
@@ -84,7 +85,8 @@ export const HomePage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-surface-base text-text-main flex flex-col justify-between relative overflow-hidden">
+    <div className="min-h-screen text-text-main flex flex-col justify-between relative overflow-hidden">
+      <AmbientBackground intensity="strong" />
       {/* Top Public Sticky Navigation Bar */}
       <header className="sticky top-0 z-40 border-b border-surface-border bg-surface-base/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5">
@@ -303,23 +305,25 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Bottom CTA Banner */}
-      <section className="px-6 py-12 max-w-7xl mx-auto w-full">
-        <GlassCard variant="showcase" tilt hoverGlow className="p-8 sm:p-12 text-center space-y-6 flex flex-col items-center">
-          <span className="text-xs font-bold uppercase tracking-wider text-brand-orange">
-            Zero Guesswork. 100% Deterministic.
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-display font-bold text-text-main max-w-xl">
-            Start transforming enterprise spreadsheets into certified business intelligence.
-          </h2>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <Button variant="primary" size="lg" onClick={() => navigate("/signup")}>
-              Get Started with Demo Data
-            </Button>
-            <Button variant="secondary" size="lg" onClick={() => navigate("/product")}>
-              Read Architectural Blueprint
-            </Button>
-          </div>
-        </GlassCard>
+      <section className="relative z-10 px-6 py-12 max-w-7xl mx-auto w-full">
+        <GlowBorder active>
+          <GlassCard variant="showcase" tilt hoverGlow className="p-8 sm:p-12 text-center space-y-6 flex flex-col items-center border-0">
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-orange">
+              Zero Guesswork. 100% Deterministic.
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-display font-bold text-text-main max-w-xl">
+              Start transforming enterprise spreadsheets into certified business intelligence.
+            </h2>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <Button variant="primary" size="lg" onClick={() => navigate("/signup")}>
+                Get Started with Demo Data
+              </Button>
+              <Button variant="secondary" size="lg" onClick={() => navigate("/product")}>
+                Read Architectural Blueprint
+              </Button>
+            </div>
+          </GlassCard>
+        </GlowBorder>
       </section>
 
       {/* Footer */}

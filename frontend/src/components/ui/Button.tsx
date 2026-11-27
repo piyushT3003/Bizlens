@@ -47,13 +47,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantStyles = {
       primary:
-        "bg-gradient-to-r from-brand-orange to-brand-ember text-white shadow-glowSm hover:shadow-glowMd border border-brand-amber/40 gloss-sheen hover-shimmer-trigger micro-press",
+        "bg-gradient-to-r from-brand-orange to-brand-ember text-white shadow-glowSm hover:shadow-glowMd border border-brand-amber/50 gloss-sheen hover-shimmer-trigger micro-press btn-3d-primary",
       secondary:
-        "bg-surface-card/85 backdrop-blur-xl text-text-main border border-surface-border hover:border-brand-orange/40 hover:bg-surface-subtle shadow-sm micro-press",
+        "bg-surface-card/90 backdrop-blur-xl text-text-main border border-surface-border hover:border-brand-orange/45 hover:bg-surface-subtle shadow-sm micro-press btn-3d-secondary",
       ghost:
         "bg-transparent text-text-main hover:bg-surface-subtle border border-transparent micro-press",
       danger:
-        "bg-status-critical/15 text-status-critical border border-status-critical/30 hover:bg-status-critical/25 micro-press",
+        "bg-status-critical/15 text-status-critical border border-status-critical/35 hover:bg-status-critical/25 micro-press",
     };
 
     const sizeStyles = {
